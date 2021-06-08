@@ -1,4 +1,4 @@
-function [T_g, T_h, T_o] = arda_numerical(t_final)
+function [T_g] = arda_numerical()
 
 C_g = 1800;         % J/(kg*K), Specific heat capacity of humid air (60% relative humidity)
 C_h = 4660;         % J/(kg*K), Specific heat capacity of the heater
@@ -31,17 +31,79 @@ x_0 = [20 + C_to_K;  % K, initial T_g
     p_a0;            % kPa, partial pressure of air
     0.25];           % m^3, Initial volume of the control volume (approx.)
 
-[t, y] = ode15s(@(t,y) odefun(t, y, 0, 0, 0), [0 t_final], x_0);
+% Initialize the controller
+pid = struct(controller_pid);
+
+% Set the time step
+pid.Ts = 1;
+
+% Delay
+L = 50 * pid.Ts;
+
+% Time constant
+T = 60;
+tau = L/(L+T);
+process_gain = 100;
+a = process_gain*L/T;
+
+% % Set the gains
+% % Nichols
+% pid.Kp = 1.2/a;
+% pid.Ki = pid.Kp/(2*L);
+% pid.Kd = pid.Kp * (L/2);
+
+% Cohen-Coon
+pid.Kp = (1.35/a) * (1 + (0.18*tau)/(1-tau));
+pid.Ki = pid.Kp / ((2.5 - 2*tau)*L/(1-0.39*tau));
+pid.Kd = pid.Kp * ((0.37 - 0.37*tau)*L/(1-0.81*tau));
+
+pid.tau = 1;
+
+pid.limMin = 0;
+pid.limMax = 100;
+
+setpoint = x_0(1) + process_gain;
+measurement = x_0(1);
+goal_achieved = false;
+max_iterations = 300;
+count = 1;
+count2 = 1;
+while ~goal_achieved
+    
+    pid = calculate_controller_output(pid, setpoint, measurement);
+    if count >= 2
+       x_0 = y(end,:); 
+    end
+    [t, y] = ode15s(@(t,y) odefun(t, y, 0, 0, 0, pid.out), [0 pid.Ts], x_0);
+    measurement = y(end,1);
+    T_g(count) = y(end,1);
+    
+    if measurement >= setpoint * 0.98 && measurement <= setpoint * 1.02
+        count2 = count2 + 1;
+        if count2 >= max_iterations
+            break
+        end
+    end
+    
+    if count < max_iterations
+        count = count + 1;
+    else
+        break
+    end
+    
+end
+
 figure
-plot(t, y(:,1:3) - C_to_K)
-legend({'T_g', 'T_h', 'T_o'},'Location','best')
+plot(T_g - C_to_K)
+legend({'T_g'}) %, 'T_h', 'T_o'},'Location','best')
 grid on
 
-T_g = y(:,1) - C_to_K;
+T_g = T_g - C_to_K;
 T_h = y(:,2) - C_to_K;
 T_o = y(:,3) - C_to_K;
+shg
 
-    function delta = odefun(~, x, p_v_dot, p_a_dot, V_g_dot)
+    function delta = odefun(~, x, p_v_dot, p_a_dot, V_g_dot, P_h)
         delta = zeros(length(x), 1);
         
         c1 = 1/(C_g*R_hg) + 1/(C_g*R_go);
@@ -53,7 +115,7 @@ T_o = y(:,3) - C_to_K;
         
         delta(1) = c3 - c1*x(1) + c2/x(1) + x(2)/(C_g*R_hg) + x(3)/(C_g*R_go); % dT_g/dt
         
-        delta(2) = x(1)/(C_h * m_h *R_hg) - x(2)/(C_h * m_h * R_hg); % dT_h/dt
+        delta(2) = x(1)/(C_h * m_h *R_hg) - x(2)/(C_h * m_h * R_hg) + P_h; % dT_h/dt
         
         delta(3) = 0; % dT_o/dt, Constant ambient temperature outside the system
         delta(4) = 0; % dp_g/dt, Constant total pressure at ambient
