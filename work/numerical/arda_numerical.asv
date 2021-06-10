@@ -6,7 +6,7 @@ c_p = 0.718;        % Specific heat of air at constant volume
 m_h = 2.8;          % kg, Mass of the heater
 R_a = 287.058;      % J/(kg*K), Specific Gas Constant, dry air
 R_v = 461.495;      % J/(kg*K), Specific Gas Constant, water vapor
-R_go = 0.03;        % K/W, Thermal resistance of the gas mixture to outside interface
+R_go = 0.03;       % K/W, Thermal resistance of the gas mixture to outside interface
 R_hg = 0.005;       % K/W, Thermal resistance of the heater to gax mixture interface
 
 C_to_K = 273.15;
@@ -15,7 +15,7 @@ C_to_K = 273.15;
 p_g0 = 101.325;     % kPa
 V_g0 = 0.25;         % m^3
 
-phi_0 = 0; % Relative humidity
+phi_0 = 0.25; % Relative humidity
 
 T = T_g0 + C_to_K;
 if T < 647.096 && T > 273.15
@@ -33,7 +33,7 @@ V_g = V_g0;
 p_g = p_g0;
 
 a1 = (phi_0 * p_s * R_a)/(p_g * R_v);
-q_0 = 0; %(a1 + 0.622) / (0.622 - a1);
+q_0 = (a1 + 0.622) / (0.622 - a1);
 
 % kg/kg, humidity ratio (mass of vapor to mass of air)
 % humidity_ratio = q_0;
