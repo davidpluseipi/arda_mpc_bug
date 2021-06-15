@@ -38,50 +38,28 @@ constants = [R_a, R_v, R_go, R_hg];
 % Ref: https://www.me.psu.edu/cimbala/me433/Links/Table_A_9_CC_Properties_of_Air.pdf
 if exist('specific_heat_table.mat', 'file')
     load('specific_heat_table.mat','specific_heat_fit_obj');
-    
+    fit_obj = specific_heat_fit_obj;
 else
-    temp_data = 273.15 + [0:5:50, 60:10:100, 120:20:200]';
-    c_data = [1006*ones(1,3) 1007*ones(1,10) 1008*ones(1,2) 1009 1011 1013 ...
-        1016 1019 1023]';
-    
-    [xData, yData] = prepareCurveData(temp_data, c_data);
-    ft = fittype( 'poly8' );
-    [specific_heat_fit_obj, gof] = fit(xData, yData, ft, 'Normalize', 'on' );
-    
-    save specific_heat_table.mat specific_heat_fit_obj gof
-    
-    figure
-    plot(specific_heat_fit_obj, temp_data, c_data)
-    title('Specific Heat J/(kg K) vs Temp (K)')
+    [fit_obj, ~] = calculate_specific_heat_data();
 end
-fit_obj = specific_heat_fit_obj;
-
 
 p_g0 = 101.325;     % kPa, Initial pressure of the control volume.
 V_g0 = 0.25;        % m^3, Initial volume of aRDA "control volume" (constant)
 
 % Calculate initial saturation pressure (needed for humidity ratio)
-if T_g0 >= 647.096 || T_g0 < 273.15
-    fprintf(['\nInitial temperature is %.3f K. Valid range in Kelvin is '...
-        '273.15 < T < 647.096\n'], T_g0)
-    error(['Temperature out of valid range for valid saturation pressure '...
-        'calculation.'])
-    
-else
-    teta = T_g0 - 0.23855557567849 / (T_g0 - 650.17534844798);
-    A = teta ^ 2 + 1167.0521452767 * teta - 724213.16703206;
-    B = -17.073846940092 * teta ^ 2 + 12020.82470247 * teta - 3232555.0322333;
-    C = 14.91510861353 * teta ^ 2 - 4823.2657361591 * teta + 405113.40542057;
-    p_4 = (2 * C / (-B + (B ^ 2 - 4 * A * C) ^ 0.5)) ^ 4;
-    p_s0 = p_4 * 1000;  % conver to kPa
-    clearvars teta A B C p_4 teta
-end
+p_s0 = calculate_saturation_pressure(T_g0);
 
-% MEASUREMENT
-% phi_0 = 0.99;  % percent, Initial Relative humidity
+% kg/m^3, density of dry air at 20C and 1 atm
+rho_a = 1.204; 
+
+% kg, mass of dry air
+m_a0 = rho_a * V_g0;
+
+% kg, mass of vapor
+m_v0 = m_a0 * phi_0 * 0.622 * (p_s0 / (p_g0 - p_s0)); 
 
 % Initial humidity ratio
-m_v0 = phi_0 * p_s0 * V_g0 / (R_v * T_g0);
+% m_v0 = phi_0 * p_s0 * V_g0 / (R_v * T_g0);
 q_0 = phi_0 * p_s0 * V_g0 * R_a * T_g0 /(R_v * T_g0 * p_g0 * V_g0 ...
     - m_v0*R_v^2 * T_g0);
 
@@ -92,16 +70,8 @@ p_v0 = q_0 * p_g0/(q_0 + 0.622);
 p_a0 = p_g0 - p_v0;
 
 % Initial state vector
-x_0 = [T_g0;   % 1) K, initial T_g
-    T_h0;       % 2) K, Initial heater temp, T_h
-    T_o0;       % 3) K, Initial outside / ambient temp, T_o
-    p_g0;      % 4) kPa, Initial total pressure of gas mixture
-    p_v0;      % 5) kPa, Initial partial pressure of water vapor
-    p_a0;      % 6) kPa, Initial partial pressure of air
-    V_g0;      % 7) m^3, Initial volume of the control volume
-    q_0;       % 8) Initial humidity ratio
-    phi_0;    % 9) Initial relative humidity
-    p_s0];      % 10) Initial saturation vapor pressure
+x_0 = [T_g0;T_h0;T_o0;p_g0;p_v0;p_a0;V_g0;q_0;phi_0;p_s0;m_v0;m_a0];
+
 
 %% Define the controller
 % Initialize the controller
@@ -110,67 +80,23 @@ pid = controller_pid;
 % Set the time step
 pid.Ts = T_s;
 
-% Time delay L, aka T_dead
-% Transportation lag or dead time. The time taken from the moment the
-% disturbance was introduced to the first sign of change in the output
-% signal
-%my_delay = 0;
-%first_sign_of_change = 2.5; % Measured from plot (calibration run "without" controller)
-%tau_dead = first_sign_of_change - my_delay;
-
-% Time for the response to occur
-%tau = 1900 - my_delay; % The calibration run was for 2000 iterations
-
-% Size of the step change
-%X_0 = delta_T;
-
-% The value the response goes to as the system reaches steady state
-%M_u = 98; % Pulled of the plot from the calibration run
-
-%R = tau_dead/tau;
-% K_0 = X_0 * tau / (M_u * tau_dead);
-
-% tau = tau_dead/(tau_dead+T);
-% Gathered during calibration run
-
 tau = 2532;
-tau_dead = 10; % It was at least this small
+tau_dead = 10; 
 P = (197.1 - 97.1)/97.1; % Percent change of input
 N = ((25.81 - 22.87)/22.87) / tau; % Percent change of output / tau
 L = tau_dead;
 R = tau_dead / tau;
 K_0 = P/(N*L);
-% Steady state gain
-
-% L = tau_dead;
 
 % Cohen-Coon 1(only for self-regulating processes, like flow, temp, pressure)
 pid.Kp = K_0 * (1.33 + R/4);
 pid.Ki = (L * (30 + 3*R) / (9 + 20 * R));
 pid.Kd = (4 * L / (11 + 2 * R));
-
-% Cohen-Coon 2
-% process_gain = (25.8187 - 22.8742)/100; % change in process variable over change in controller output
-% a = process_gain * tau_dead / tau;
-% tau2 = L / (L + tau);
-% pid.Kp = (1.35/a) * (1 + (0.18 * tau2) / (1 - tau2));
-% pid.Ki = ((2.5 - 2*tau2) * tau_dead / (1 - 0.39 * tau2));
-% pid.Kd = ((0.37 - 0.37 * tau2) * tau_dead / (1 - 0.81 * tau2));
-
 pid.tau = tau;
-
-% pid.Kp = 1;
-% pid.Ki = 0;
-% pid.Kd = 0;
-% pid.tau = 1;
-
 pid.min_output = 0;
-pid.max_output = 11000 % Max watts from heater
+pid.max_output = 11000; % Max watts from heater
 
-setpoint = x_0(1) + delta_T;
 measurement = x_0(1);
-count = 1;
-prev = zeros(length(x_0), 1);
 T_g_out = zeros(max_iterations, 1);
 T_h_out = zeros(max_iterations, 1);
 T_o_out = zeros(max_iterations, 1);
@@ -179,6 +105,7 @@ p_a_out = zeros(max_iterations, 1);
 q_out = zeros(max_iterations, 1);
 phi_out = zeros(max_iterations, 1);
 p_s_out = zeros(max_iterations, 1);
+P_h_out = zeros(max_iterations, 1);
 
 d.Message = "Processing...";
 drawnow
@@ -187,54 +114,41 @@ draw_times = 1:10:max_iterations;
 for i = 1:max_iterations
     
     %% Controller
-    % Calculate the controller output given the setpoint for the
-    % temperature of the air and the initial T_g measurement
-    if i < 1 || i > stop
+    % Establish setpoint
+    if i > stop
         setpoint = T_g0;
-    else %if i < 2000
+    else 
         setpoint = T_g0 + delta_T;
-        %     else
-        %         setpoint = T_g0 + delta_T*2;
     end
     
+    % Calculate controller output
     pid = calculate_controller_output(pid, setpoint, measurement);
     
     % Record the power setting of the heater at each time step
-    P_h_out(count) = pid.out;
+    P_h_out(i) = pid.out;
     
     %% Plant Model
     % On the first time through the loop, use the x_0 above. After that,
     % the initial values to give to the ode are the last ones it gave.
-    if count >= 2
+    if i >= 2
         x_0 = y(end,:);
     end
     
-    % Call ode solver on custom ode function using the controller output
-    % (i.e. the setting in Watts to send to the heater)
-    % ode_options = odeset('RelTol',5e-6, 'AbsTol',5e-6);
-    
-    [~, y] = ode15s(@(t,y) odefun(t, y, 0, 0, 0, pid, constants, prev',...
-        fit_obj), [0 pid.Ts], x_0);%, ode_options);
-   
-    prev = y(end-1,:);
+    % Call ode solver 
+    [~, y] = ode15s(@(t,y) odefun(t, y, 0, 0, 0, pid, constants,...
+        fit_obj), [0 pid.Ts], x_0);
 
     % Capture sensor measurements
     measurement = y(end,1);
-    T_g_out(count) = y(end,1);
-    T_h_out(count) = y(end,2);
-    T_o_out(count) = y(end,3);
-    p_v_out(count) = y(end,5);
-    p_a_out(count) = y(end,6);
-    q_out(count) = y(end,8);
-    phi_out(count) = y(end,9);
-    p_s_out(count) = y(end,10);
-    
-    %     fprintf('%.1f %.1f %.1f %.1f %.1f %.3f %.3f %.1f\n', ...
-    %         T_g_out(count)-c2k, T_h_out(count)-c2k, T_o_out(count)-c2k, ...
-    %         p_v_out(count), p_a_out(count), ...
-    %         q_out(count), phi_out(count), ...
-    %         p_s_out(count))
-    
+    T_g_out(i) = y(end,1);
+    T_h_out(i) = y(end,2);
+    T_o_out(i) = y(end,3);
+    p_v_out(i) = y(end,5);
+    p_a_out(i) = y(end,6);
+    q_out(i)   = y(end,8);
+    phi_out(i) = y(end,9);
+    p_s_out(i) = y(end,10);
+       
     if ismember(i, draw_times)
         d.Value = i/max_iterations;
         drawnow
@@ -242,8 +156,6 @@ for i = 1:max_iterations
             break
         end
     end
-    
-    count = count + 1;
 end
 
 d.Message = 'Plotting...';
@@ -253,6 +165,7 @@ drawnow
 T_g_out = T_g_out - c2k;
 T_h_out = T_h_out - c2k;
 T_o_out = T_o_out - c2k;
+setpoint = T_g0 + delta_T;
 setpoint = setpoint - c2k;
 
 %% Humidity plot
@@ -290,74 +203,54 @@ legend({'p_s'}, 'Location', 'best')
 ylabel('p_s')
 
 %% Temperature plot
-figure;
-subplot(2,1,1)
+figure; subplot(2,1,1)
 
 % Gas mixture temperature
-plot(T_g_out)
-hold on
+plot(T_g_out); hold on; grid on
 
 % Heater temperature
 plot(T_h_out)
 
 % Plot a horizontal line at the setpoint
-plot((T_g0 + delta_T - c2k) * ones(max_iterations,1), '--k')
+plot(setpoint * ones(max_iterations,1), '--k')
 
 % Plot a horizontal line at the outside temperature
 plot(T_o_out, '--m')
-
 ylabel('Temp. (C)')
 legend({'T_g', 'T_h', 'SP', 'T_o'}, 'Location', 'best')
-grid on
 
 % Power setting of the heater
 subplot(2,1,2)
-plot(P_h_out)
+plot(P_h_out); grid on
 legend({'P_h'},'Location','best')
 ylabel('Power (W)')
-grid on
 
-%% Done with progress dialog
+% Done with progress dialog
 close(d)
 
 end
 
 %% ODE of thermal system
-function [delta] = odefun(~, x, p_v_dot, p_a_dot, V_g_dot, pid, constants, prev, fit_obj)
+function [delta] = odefun(~, x, p_v_dot, p_a_dot, V_g_dot, pid, constants, fit_obj)
 %% Setup and unpacking
 delta = zeros(length(x), 1);
+
 % System variables
-T_g = x(1);
+T_g = x(1); % T_g0  1) K, initial T_g
+T_h = x(2); % T_h0; 2) K, Initial heater temp, T_h
+T_o = x(3); % T_o0; 3) K, Initial outside / ambient temp, T_o
+p_g = x(4); % p_g0; 4) kPa, Initial total pressure of gas mixture
+p_v = x(5); % p_v0; 5) kPa, Initial partial pressure of water vapor
+p_a = x(6); % p_a0; 6) kPa, Initial partial pressure of air
+V_g = x(7); % V_g0; 7) m^3, Initial volume of the control volume
+q   = x(8); % q_0;  8) Initial humidity ratio
+phi = x(9); % phi_0;9) Initial relative humidity
+p_s = x(10); % p_s0];10) Initial saturation vapor pressure
+m_v = x(11);
+m_a = x(12);
 
-if T_g > 140 + 273.15
-    error('Your weapons have melted. You are defenseness and die.')
-end
-
-if x(1) < 273.15
-    error('The ice wizard has frozen your Tantan.')
-end
-
-% T_h = x(2);
-% T_o = x(3);
-p_g = x(4);
-p_v = x(5);
-p_a = x(6);
-V_g = x(7);
-q = x(8);
-phi = x(9);
-p_s = x(10);
-
-% Values from the previous step
-p_v_prev = prev(5);
-% q_prev = prev(8);
-phi_prev = prev(9);
-p_s_prev = prev(10);
-
-% Constants
-% constants = [C_g, C_h, c_p, m_h, R_a, R_v, R_go, R_hg];
-%C_g = 1000;         % J/(kg*K), Specific heat capacity of
-C_g = fit_obj(T_g);
-
+% Constants       
+C_g = fit_obj(T_g); % J/(kg*K), Specific heat capacity of
 C_h = 4660;         % J/(kg*K), Specific heat capacity of the heater
 c_p = 0.718;        % Specific heat of air at constant pressure
 m_h = 2.8;          % kg, Mass of the heater (about 6 lbs)
@@ -365,6 +258,24 @@ R_a = constants(1);
 R_v = constants(2);
 R_go = constants(3);
 R_hg = constants(4);
+
+%% dT_o/dt
+delta(3) = 0; % Constant ambient temperature outside the system
+
+%% dp_g/dt
+delta(4) = 0; % Constant total pressure at ambient
+p_g2 = p_g + delta(4);
+
+%% dV_g/dt
+delta(7) = 0;  % Constant volume for the gas mixture (aRDA volume is fixed)
+
+%% Change in m_a
+delta(12) = 0;
+m_a2 = m_a + delta(12);
+
+%% Change in m_v
+delta(11) = 0.001; % 1 gram per time step
+m_v2 = m_v + delta(11);
 
 
 %% dT_g/dt
@@ -377,73 +288,43 @@ c3 = (c_p/C_g) * ((p_a_dot * x(7) + x(6) * V_g_dot)/ R_a ...
 
 % mass_flow_in = 0;
 delta(1) = -(c3 + c1)*x(1) + c2/x(1) + x(2)/(C_g*R_hg) + x(3)/(C_g*R_go);
-
+T_g2 = T_g + delta(1);
+%%
+p_s2 = calculate_saturation_pressure(T_g2);
 
 %% dT_h/dt
 delta(2) = x(1)/(C_h * m_h * R_hg)...
          - x(2)/(C_h * m_h * R_hg)...
          + pid.out/(C_h * m_h) ;
+T_h2 = T_h + delta(2);
 
+%% dp_s/dt (change in saturation pressure)
+delta(10) = p_s2 - p_s;
 
-%% dT_o/dt
-delta(3) = 0; % Constant ambient temperature outside the system
+%% dq/dt (change in humidity ratio)
+% phi2 = phi + delta(9);
+% p_s2 = p_s + delta(10);
+% V_g2 = V_g + delta(7);
+% T_g2 = T_g + delta(1);
+% p_g2 = p_g + delta(4);
+% %
+% m_v2 = phi2 * p_s2 * V_g2 / (R_v * T_g2);
+% q2 = phi2 * p_s2 * V_g2 * R_a * T_g2 /...
+%     (R_v * T_g2 * p_g2 * V_g2 - m_v2*R_v^2 * T_g2);
+q2 = m_v2 / (m_a2 + m_v2); 
+delta(8) = q2 - q;
 
-
-%% dp_g/dt
-delta(4) = 0; % Constant total pressure at ambient
-
+%% dp_v/dt
+p_v2 = q2 * p_g2/(q2 + 0.622);
+delta(5) = p_v2 - p_v;
 
 %% dp_a/dt
 delta(6) = -delta(5);
 
-
-%% dV_g/dt
-delta(7) = 0;  % Constant volume for the gas mixture (aRDA volume is fixed)
-
-
 %% dphi/dt (change in relative humidity)
-phi2 = (p_v_prev + delta(4)) / (p_s_prev + x(10)); % p_v/p_s
-delta(9) = phi2 - phi_prev;
 
-
-%% dp_s/dt (change in saturation pressure)
-if T_g >= 647.096 || T_g <= 273.15 
-    fprintf(['\nTemperature is %.3f K. Valid range in Kelvin is '...
-        '273.15 < T < 647.096\n'], T_g)
-    error(['Temperature out of valid range for valid saturation pressure '...
-        'calculation.'])
-else
-    teta2 = x(1) - 0.23855557567849 / (x(1) - 650.17534844798);
-    A1 = teta2 ^ 2 + 1167.0521452767 * teta2 - 724213.16703206;
-    B1 = -17.073846940092 * teta2 ^ 2 + 12020.82470247 * teta2 - 3232555.0322333;
-    C1 = 14.91510861353 * teta2 ^ 2 - 4823.2657361591 * teta2 + 405113.40542057;
-    p4 = (2 * C1 / (-B1 + (B1 ^ 2 - 4 * A1 * C1) ^ 0.5)) ^ 4;
-    p_s2 = p4 * 1000;  % convert to kPa
-    clearvars A1 B1 C1 p4 teta2
-end
-delta(10) = p_s2 - x(10);
-
-
-%% dq/dt (change in humidity ratio)
-phi2 = phi + delta(9);
-p_s2 = p_s + delta(10);
-V_g2 = V_g + delta(7);
-T_g2 = T_g + delta(1);
-p_g2 = p_g + delta(4);
-%
-m_v2 = phi2 * p_s2 * V_g2 / (R_v * T_g2);
-q2 = phi2 * p_s2 * V_g2 * R_a * T_g2 /...
-    (R_v * T_g2 * p_g2 * V_g2 - m_v2*R_v^2 * T_g2);
-delta(8) = q2 - q;
-
-%% dp_v/dt
-% q_dot = delta(8)/pid.Ts; % dq/dt
-% 
-% delta(5) = p_g*(q_dot*(q + 0.622) - q*q_dot)...
-%         / (q^2 +2*0.622*q + 0.622^2);
-
-p_v2 = phi2 * p_s2;
-delta(5) = p_v2 - p_v;
+phi2 = q / (0.622 * (p_s2 / (p_g2 - (1 - 0.622)*p_s2)));
+delta(9) = phi2 - phi;
 
 end
 
