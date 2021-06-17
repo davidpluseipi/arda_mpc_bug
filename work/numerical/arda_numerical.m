@@ -1,4 +1,4 @@
-function [T_g_out, T_h_out, P_h_out, phi_out] = arda_numerical(T_g0, delta_T, T_o0, phi_0, T_h0, T_s, max_iterations, stop)
+function [T_g_out, T_h_out, P_h_out, phi_out] = arda_numerical(delta_T, T_o0, phi_0, T_h0, T_s, max_iterations, stop)
 %% [T_g, T_h, P_h] = arda_numerical(T_g0, delta_T, T_o, phi_0, max_iterations)
 % Inputs:
 %   T_g0            : Initial gax mixture temperature (C)
@@ -23,6 +23,7 @@ drawnow
 
 %% Convert to Kelvin
 c2k = 273.15;
+T_g0 = 20;
 T_g0 = T_g0 + c2k;
 T_o0 = T_o0 + c2k;
 T_h0 = T_h0 + c2k;
@@ -38,10 +39,10 @@ constants = [R_a, R_v, R_go, R_hg];
 % Ref: https://www.me.psu.edu/cimbala/me433/Links/Table_A_9_CC_Properties_of_Air.pdf
 if exist('specific_heat_table.mat', 'file')
     load('specific_heat_table.mat','specific_heat_fit_obj');
-    fit_obj = specific_heat_fit_obj;
 else
-    [fit_obj, ~] = calculate_specific_heat_data();
+    [specific_heat_fit_obj, ~] = calculate_specific_heat_data();
 end
+
 
 p_g0 = 101.325;     % kPa, Initial pressure of the control volume.
 V_g0 = 0.25;        % m^3, Initial volume of aRDA "control volume" (constant)
@@ -50,18 +51,17 @@ V_g0 = 0.25;        % m^3, Initial volume of aRDA "control volume" (constant)
 p_s0 = calculate_saturation_pressure(T_g0);
 
 % kg/m^3, density of dry air at 20C and 1 atm
-rho_a = 1.204; 
+rho_a0 = XDryAir('tK', T_g0, 'rho', p_g0); 
 
 % kg, mass of dry air
-m_a0 = rho_a * V_g0;
+m_a0 = rho_a0 * V_g0;
 
 % kg, mass of vapor
 m_v0 = m_a0 * phi_0 * 0.622 * (p_s0 / (p_g0 - p_s0)); 
 
 % Initial humidity ratio
 % m_v0 = phi_0 * p_s0 * V_g0 / (R_v * T_g0);
-q_0 = phi_0 * p_s0 * V_g0 * R_a * T_g0 /(R_v * T_g0 * p_g0 * V_g0 ...
-    - m_v0*R_v^2 * T_g0);
+q_0 = m_v0 / (m_a0 + m_v0); 
 
 % kPa, Initial partial pressure of water vapor
 p_v0 = q_0 * p_g0/(q_0 + 0.622);
@@ -70,10 +70,10 @@ p_v0 = q_0 * p_g0/(q_0 + 0.622);
 p_a0 = p_g0 - p_v0;
 
 % Initial state vector
-x_0 = [T_g0;T_h0;T_o0;p_g0;p_v0;p_a0;V_g0;q_0;phi_0;p_s0;m_v0;m_a0];
+x_0 = [T_g0; T_h0; T_o0; p_g0; p_v0; p_a0; V_g0; q_0; phi_0; p_s0; m_v0; m_a0];
 
 
-%% Define the controller
+%% Define the temperature controller
 % Initialize the controller
 pid = controller_pid;
 
@@ -96,7 +96,26 @@ pid.tau = tau;
 pid.min_output = 0;
 pid.max_output = 11000; % Max watts from heater
 
+%% Initialize the relative humidity controller
+
+pid_phi = controller_pid;
+pid_phi.Ts = pid.Ts;
+
+pid_phi.tau = 59;
+P2 = (0.1001 - 0.001)/0.001;
+N2 = ((0.3 - 0.2)/0.2) / pid_phi.tau;
+L2 = 0.1; % tau_dead
+R2 = tau_dead / pid_phi.tau;
+K_02 = P2 / (N2 * L2);
+
+pid_phi.Kp = K_02 * (1.33 + R2/4);
+pid_phi.Ki = (L2 * (30 + 3*R2) / (9 + 20 * R2));
+pid_phi.Kd = (4 * L2 / (11 + 2 * R2));
+pid_phi.min_output = 0;
+pid_phi.max_output = 1;
+
 measurement = x_0(1);
+measurement_phi = x_0(9);
 T_g_out = zeros(max_iterations, 1);
 T_h_out = zeros(max_iterations, 1);
 T_o_out = zeros(max_iterations, 1);
@@ -106,26 +125,30 @@ q_out = zeros(max_iterations, 1);
 phi_out = zeros(max_iterations, 1);
 p_s_out = zeros(max_iterations, 1);
 P_h_out = zeros(max_iterations, 1);
+m_steam = zeros(max_iterations, 1);
 
 d.Message = "Processing...";
 drawnow
 draw_times = 1:10:max_iterations;
+
+setpoint_T = T_g0 + delta_T;
+setpoint_phi = 0.5;
+
+
 %%
 for i = 1:max_iterations
-    
-    %% Controller
-    % Establish setpoint
-    if i > stop
-        setpoint = T_g0;
-    else 
-        setpoint = T_g0 + delta_T;
-    end
-    
+    %% Controller 
     % Calculate controller output
-    pid = calculate_controller_output(pid, setpoint, measurement);
+    pid = calculate_controller_output(pid, setpoint_T, measurement);
+    if i == 138
+        keyboard
+    end
+    pid_phi = calculate_controller_output(pid_phi, setpoint_phi, ...
+        measurement_phi);
     
     % Record the power setting of the heater at each time step
     P_h_out(i) = pid.out;
+    m_steam(i) = pid_phi.out;
     
     %% Plant Model
     % On the first time through the loop, use the x_0 above. After that,
@@ -133,13 +156,16 @@ for i = 1:max_iterations
     if i >= 2
         x_0 = y(end,:);
     end
-    
-    % Call ode solver 
-    [~, y] = ode15s(@(t,y) odefun(t, y, 0, 0, 0, pid, constants,...
-        fit_obj), [0 pid.Ts], x_0);
 
+    % Call ode solver 
+    [~, y] = ode23(@(t,y) odefun(t, y, pid, pid_phi, constants,...
+        specific_heat_fit_obj, i), [0 pid.Ts], x_0);
+    if any(isnan(y))
+        keyboard
+    end
     % Capture sensor measurements
     measurement = y(end,1);
+    measurement_phi = y(end,9);
     T_g_out(i) = y(end,1);
     T_h_out(i) = y(end,2);
     T_o_out(i) = y(end,3);
@@ -165,76 +191,26 @@ drawnow
 T_g_out = T_g_out - c2k;
 T_h_out = T_h_out - c2k;
 T_o_out = T_o_out - c2k;
-setpoint = T_g0 + delta_T;
-setpoint = setpoint - c2k;
+setpoint_T = T_g0 + delta_T;
+setpoint_T = setpoint_T - c2k;
 
-%% Humidity plot
-figure
-yyaxis left
-plot(q_out)
-ylabel('Humidity Ratio')
-
-yyaxis right
-plot(phi_out)
-ylabel('Relative Humidity')
-xlabel('Time')
-grid on
-
-%% Pressure plot
-figure
-subplot(3,1,1)
-plot(p_v_out)
-title('Pressure (kPa)')
-grid on
-legend({'p_v'}, 'Location', 'best')
-ylabel('p_v')
-
-subplot(3,1,2)
-plot(p_a_out)
-grid on
-legend({'p_a'}, 'Location', 'best')
-ylabel('p_a')
-
-subplot(3,1,3)
-plot(p_s_out)
-grid on
-xlabel('Time')
-legend({'p_s'}, 'Location', 'best')
-ylabel('p_s')
-
-%% Temperature plot
-figure; subplot(2,1,1)
-
-% Gas mixture temperature
-plot(T_g_out); hold on; grid on
-
-% Heater temperature
-plot(T_h_out)
-
-% Plot a horizontal line at the setpoint
-plot(setpoint * ones(max_iterations,1), '--k')
-
-% Plot a horizontal line at the outside temperature
-plot(T_o_out, '--m')
-ylabel('Temp. (C)')
-legend({'T_g', 'T_h', 'SP', 'T_o'}, 'Location', 'best')
-
-% Power setting of the heater
-subplot(2,1,2)
-plot(P_h_out); grid on
-legend({'P_h'},'Location','best')
-ylabel('Power (W)')
+create_plots(T_g_out, T_h_out, T_o_out, p_v_out, p_a_out, q_out,...
+    phi_out, p_s_out, P_h_out, setpoint_T, max_iterations, m_steam)
 
 % Done with progress dialog
 close(d)
-
+close(fig)
 end
 
 %% ODE of thermal system
-function [delta] = odefun(~, x, p_v_dot, p_a_dot, V_g_dot, pid, constants, fit_obj)
+function [delta] = odefun(~, x, pid, pid_phi, constants, fit_obj, i)
 %% Setup and unpacking
 delta = zeros(length(x), 1);
+p_v_dot = 0;
+p_a_dot = 0;
+V_g_dot = 0;
 
+    
 % System variables
 T_g = x(1); % T_g0  1) K, initial T_g
 T_h = x(2); % T_h0; 2) K, Initial heater temp, T_h
@@ -268,14 +244,18 @@ p_g2 = p_g + delta(4);
 
 %% dV_g/dt
 delta(7) = 0;  % Constant volume for the gas mixture (aRDA volume is fixed)
+V_g2 = V_g + delta(7);
 
 %% Change in m_a
-delta(12) = 0;
-m_a2 = m_a + delta(12);
+% kg/m^3, density of dry air at 20C and 1 atm
+rho_a = XDryAir('tK', T_g, 'rho'); 
 
-%% Change in m_v
-delta(11) = 0.001; % 1 gram per time step
-m_v2 = m_v + delta(11);
+% kg, mass of dry air
+m_a2 = rho_a * V_g2;
+
+delta(12) = m_a2 - m_a;
+
+
 
 
 %% dT_g/dt
@@ -290,32 +270,36 @@ c3 = (c_p/C_g) * ((p_a_dot * x(7) + x(6) * V_g_dot)/ R_a ...
 delta(1) = -(c3 + c1)*x(1) + c2/x(1) + x(2)/(C_g*R_hg) + x(3)/(C_g*R_go);
 T_g2 = T_g + delta(1);
 %%
-p_s2 = calculate_saturation_pressure(T_g2);
+
+
+%% Change in m_v
+% Call XSteam with pressure in bar (kPa/100), and T in C
+p_g_bar = p_g2/100;
+T_g_C = T_g2 - 273.15;
+rho_v2 = XSteam('rho_pt', p_g_bar, T_g_C);
+m_v2 = rho_v2 * V_g2;
+delta(11) = (m_v2 - m_v) + pid_phi.out; % kg per time step
+% m_v2 = m_v + delta(11);
 
 %% dT_h/dt
 delta(2) = x(1)/(C_h * m_h * R_hg)...
          - x(2)/(C_h * m_h * R_hg)...
          + pid.out/(C_h * m_h) ;
-T_h2 = T_h + delta(2);
+% T_h2 = T_h + delta(2);
 
 %% dp_s/dt (change in saturation pressure)
+p_s2 = calculate_saturation_pressure(T_g2);
 delta(10) = p_s2 - p_s;
 
 %% dq/dt (change in humidity ratio)
-% phi2 = phi + delta(9);
-% p_s2 = p_s + delta(10);
-% V_g2 = V_g + delta(7);
-% T_g2 = T_g + delta(1);
-% p_g2 = p_g + delta(4);
-% %
-% m_v2 = phi2 * p_s2 * V_g2 / (R_v * T_g2);
-% q2 = phi2 * p_s2 * V_g2 * R_a * T_g2 /...
-%     (R_v * T_g2 * p_g2 * V_g2 - m_v2*R_v^2 * T_g2);
 q2 = m_v2 / (m_a2 + m_v2); 
 delta(8) = q2 - q;
 
 %% dp_v/dt
 p_v2 = q2 * p_g2/(q2 + 0.622);
+if p_v2 > p_g2
+    p_v2 = p_v;
+end
 delta(5) = p_v2 - p_v;
 
 %% dp_a/dt
@@ -323,14 +307,79 @@ delta(6) = -delta(5);
 
 %% dphi/dt (change in relative humidity)
 
-phi2 = q / (0.622 * (p_s2 / (p_g2 - (1 - 0.622)*p_s2)));
+% m_v2 / calculate_saturation_density(T_g2);
+phi2 =  p_v2 / p_s2;
+% phi2 =  q2 / (0.622 * (p_s2 / (p_g2 - (1 - 0.622)*p_s2)));
+% phi2 = (m_v2/m_a2) / (0.622 * p_s2 / (p_g2 - p_s2))
+
 delta(9) = phi2 - phi;
 
 end
 
+function create_plots(T_g_out, T_h_out, T_o_out, p_v_out, p_a_out, q_out,...
+    phi_out, p_s_out, P_h_out, setpoint_T, max_iterations, m_steam)
+%% Humidity plot
+h1 = figure(1);
+yyaxis left
+plot(q_out)
+ylabel('Humidity Ratio')
+
+yyaxis right
+plot(phi_out)
+ylabel('Relative Humidity')
+xlabel('Time')
+grid on
 
 
+%% Pressure plot
+h2 = figure(2);
+subplot(3,1,1)
+plot(p_v_out)
+title('Pressure (kPa)')
+grid on
+legend({'p_v'}, 'Location', 'best')
+ylabel('p_v')
 
+subplot(3,1,2)
+plot(p_a_out)
+grid on
+legend({'p_a'}, 'Location', 'best')
+ylabel('p_a')
+
+subplot(3,1,3)
+plot(p_s_out)
+grid on
+xlabel('Time')
+legend({'p_s'}, 'Location', 'best')
+ylabel('p_s')
+
+%% Temperature plot
+h3 = figure(3); subplot(2,1,1)
+
+% Gas mixture temperature
+plot(T_g_out); hold on; grid on
+
+% Heater temperature
+plot(T_h_out)
+
+% Plot a horizontal line at the setpoint
+plot(setpoint_T * ones(max_iterations,1), '--k')
+
+% Plot a horizontal line at the outside temperature
+plot(T_o_out, '--m')
+ylabel('Temp. (C)')
+legend({'T_g', 'T_h', 'SP', 'T_o'}, 'Location', 'best')
+
+% Power setting of the heater
+subplot(2,1,2)
+plot(P_h_out); grid on
+legend({'P_h'},'Location','best')
+ylabel('Power (W)')
+
+%%
+h4 = figure(4);
+plot(m_steam)
+end
 
 
 
