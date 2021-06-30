@@ -9,8 +9,7 @@
 % 
 
 %% Start Clean
-clear
-close all; clc
+
 
 
 % %% Use Open Hardware Monitor via Windows Command Line to acquire data
@@ -139,15 +138,15 @@ close all; clc
 % grid on
 
 %% 
-load('D:\Git_onPH\Rehydration\allGraphDataBaseline.mat')
-time_original = allGraphData.run20210216022A.rep1.atSeco;
-base = datetime(2021, 05, 10, 12, 0, 0, 0, 'Format','yyyy-MM-dd HH:mm:ss.SSS');
-time_datetimes = base + duration(0, 0, time_original);
-time = time_datetimes;
-data = timetable(allGraphData.run20210216022A.rep1.aTS1Pto,...
-                 allGraphData.run20210216022A.rep1.cdPay,...
-                 'VariableNames', {'temp','power'},...
-                 'RowTimes',time);
+% load('D:\Git_onPH\Rehydration\allGraphDataBaseline.mat')
+% time_original = allGraphData.run20210216022A.rep1.atSeco;
+% base = datetime(2021, 05, 10, 12, 0, 0, 0, 'Format','yyyy-MM-dd HH:mm:ss.SSS');
+% time_datetimes = base + duration(0, 0, time_original);
+% time = time_datetimes;
+% data = timetable(allGraphData.run20210216022A.rep1.aTS1Pto,...
+%                  allGraphData.run20210216022A.rep1.cdPay,...
+%                  'VariableNames', {'temp','power'},...
+%                  'RowTimes',time);
 
 
 % times = zeros(length(time),1);

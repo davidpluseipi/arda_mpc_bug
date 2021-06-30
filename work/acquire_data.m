@@ -16,15 +16,7 @@ d.addinput("Board1", "Ai6", "Voltage") % jammed in heating element
 % Set the amount of time to acquire data
 acquisition_window = 10; % seconds
 
-% Create a dialog box for the user
-dialog_figure = uifigure('HandleVisibility', 'on');
-dialog_box = uiprogressdlg(dialog_figure, "Title", "Acquiring Data", "Message",...
-    strcat(...
-    strcat(...
-    strcat('Started: ', string(datetime('now')))...
-    , '  End: ')...
-    , string(datetime('now') + duration(0,0, acquisition_window))));
-drawnow
+
 
 %% Read the data
 [data, ~] = read(d, seconds(acquisition_window));

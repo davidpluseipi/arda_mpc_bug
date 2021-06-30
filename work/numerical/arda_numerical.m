@@ -1,4 +1,4 @@
-function [T_g_out, T_h_out, P_h_out, phi_out] = arda_numerical(delta_T, T_o0, phi_0, T_h0, T_s, max_iterations, stop)
+function [output] = arda_numerical(delta_T, T_o0, T_h0, T_s, max_iterations, stop)
 %% [T_g, T_h, P_h] = arda_numerical(T_g0, delta_T, T_o, phi_0, max_iterations)
 % Inputs:
 %   T_g0            : Initial gax mixture temperature (C)
@@ -15,6 +15,18 @@ function [T_g_out, T_h_out, P_h_out, phi_out] = arda_numerical(delta_T, T_o0, ph
 % Example:
 %   [T_g, T_h, P_h] = arda_numerical(20, 100, 20, 0.50, 300)
 %%
+%
+
+arduino_obj = arduino('COM4' ,'Uno', 'Libraries', {'Adafruit/DHT22'});
+
+% Heater
+configurePin(arduino_obj,'D2','DigitalOutput');
+
+% Temperature / Humidity
+sensor = addon(arduino_obj, 'Adafruit/DHT22', 'A1');
+
+%% Memory Preallocation
+try
 T_g_out = zeros(max_iterations, 1);
 T_h_out = zeros(max_iterations, 1);
 T_o_out = zeros(max_iterations, 1);
@@ -29,10 +41,11 @@ x_0 = zeros(12,1);
 constants = zeros(1,4);
 specific_heat_fit_obj = [];
 draw_times = 1:10:max_iterations;
+catch
+end
 
-[fig, d] = progress_dialog();
+[handle_dialog_box, dialog_box] = progress_dialog();
 T_g0 = 20;
-set_initial_conditions()
 define_constants()
 x_0 = set_initial_conditions();
 pid = controller_pid;
@@ -50,12 +63,17 @@ convert_to_C()
 create_plots(T_g_out, T_h_out, T_o_out, p_v_out, p_a_out, q_out,...
     phi_out, p_s_out, P_h_out, setpoint_T, max_iterations, m_steam)
 
-close(d); close(fig)
+close(dialog_box); close(handle_dialog_box)
+output = table(T_g_out, T_h_out, T_o_out, p_v_out, p_a_out, q_out,...
+    phi_out, p_s_out, P_h_out, 'VariableNames', {'T_g', 'T_h', 'T_o', ...
+    'p_v', 'p_a', 'q', 'phi', 'p_s', 'P_h'});
+
+%% Define Nested Functions
 
 %% Progress dialog
-    function [fig, d] = progress_dialog()
+    function [fig, dialog_box] = progress_dialog()
         fig = uifigure('HandleVisibility', 'on');
-        d = uiprogressdlg(fig, "Title", "MATLAB is thinking", "Message",...
+        dialog_box = uiprogressdlg(fig, "Title", "MATLAB is thinking", "Message",...
             "Starting...", "Cancelable", "on");%, "Indeterminate", "on");
         drawnow
     end
@@ -79,7 +97,7 @@ close(d); close(fig)
     end
 
 %% Set initial conditions
-function x_0 = set_initial_conditions()
+    function x_0 = set_initial_conditions()
         c2k = 273.15;
         
         T_g0 = T_g0 + c2k;
@@ -88,27 +106,44 @@ function x_0 = set_initial_conditions()
         p_g0 = 101.325;     % kPa, Initial pressure of the control volume.
         V_g0 = 0.25;        % m^3, Initial volume of aRDA "control volume" (constant)
         
-        % Calculate initial saturation pressure (needed for humidity ratio)
-        p_s0 = calculate_saturation_pressure(T_g0);
+        % Calculate initial saturation pressure 
+        %p_s0 = calculate_saturation_pressure(T_g0);
+        p_s0 = XSteam('psat_T', T_g0);
         
-        % kg/m^3, density of dry air at 20C and 1 atm
+        % kg/m^3
         rho_a0 = XDryAir('tK', T_g0, 'rho', p_g0);
         
         % kg, mass of dry air
         m_a0 = rho_a0 * V_g0;
         
         % kg, mass of vapor
-        m_v0 = m_a0 * phi_0 * 0.622 * (p_s0 / (p_g0 - p_s0));
+        % m_v0 = m_a0 * phi_0 * 0.622 * (p_s0 / (p_g0 - p_s0));
+        rho_v0 = XSteam('rho_pt', p_g0/100, T_g0-273.15);
+        % rho_v0 = 0.59;
+        % m_v0 = rho_v0 * V_g0;
+        m_v0 = 0;
         
         % Initial humidity ratio
         % m_v0 = phi_0 * p_s0 * V_g0 / (R_v * T_g0);
-        q_0 = m_v0 / (m_a0 + m_v0);
+        
+        % q_0 = m_v0 / (m_a0 + m_v0);
         
         % kPa, Initial partial pressure of water vapor
-        p_v0 = q_0 * p_g0/(q_0 + 0.622);
+        % p_v0 = q_0 * p_g0/(q_0 + 0.622);
+        % p_v0 = rho_v0 * T_g0 / 0.0022;
+        p_v0 = 25.7;
         
         % kPa, Initial partial pressure of air
         p_a0 = p_g0 - p_v0;
+        
+        % percent, Initial relative humidity
+        phi_0 =  p_v0 / p_s0;
+        
+        % percent of moisture by volume
+        pmv = p_v0 / p_g0;
+        
+        %
+        q_0 = 0; % 0.622 * pmv / ((1 - pmv) + 0.622 * pmv);
         
         % Initial state vector
         x_0 = [T_g0; T_h0; T_o0; p_g0; p_v0; p_a0; V_g0; q_0; phi_0; p_s0; m_v0; m_a0];
@@ -116,7 +151,7 @@ function x_0 = set_initial_conditions()
 
 %% Define the temperature controller
     function define_temperature_controller()
-       
+        
         
         % Set the time step
         pid.Ts = T_s;
@@ -159,7 +194,7 @@ function x_0 = set_initial_conditions()
 
 %% Setup progress dialog
     function setup_progress_dialog()
-        d.Message = "Processing...";
+        dialog_box.Message = "Processing...";
         drawnow
     end
 
@@ -167,16 +202,31 @@ function x_0 = set_initial_conditions()
     function main_loop()
         measurement = x_0(1);
         measurement_phi = x_0(9);
+        original = setpoint_T;
+        setpoint_phi = 0.33;
         
-        setpoint_phi = 0.5;
+%         d = daq("mcc");
+%         d.Rate = 10;  % Hz
+%         addinput(d,"Board1","Ai4","Voltage");
         %%
         for i = 1:max_iterations
+            
+            if i < 20
+                setpoint_T = T_g0;
+            else
+                setpoint_T = original;
+            end
             %% Controller
             % Calculate controller output
             pid = calculate_controller_output(pid, setpoint_T, measurement);
-            if i == 138
-                keyboard
+            if pid.out > 0 
+                % Turn on the heater
+                writeDigitalPin(arduino_obj,'D2',1)
+            else
+                % Turn off the heater
+                writeDigitalPin(arduino_obj,'D2',0)
             end
+            pause(1)
             pid_phi = calculate_controller_output(pid_phi, setpoint_phi, ...
                 measurement_phi);
             
@@ -194,9 +244,7 @@ function x_0 = set_initial_conditions()
             % Call ode solver
             [~, y] = ode23(@(t,y) odefun(t, y, pid, pid_phi, constants,...
                 specific_heat_fit_obj, i), [0 pid.Ts], x_0);
-            if any(isnan(y))
-                keyboard
-            end
+
             % Capture sensor measurements
             measurement = y(end,1);
             measurement_phi = y(end,9);
@@ -210,20 +258,18 @@ function x_0 = set_initial_conditions()
             p_s_out(i) = y(end,10);
             
             if ismember(i, draw_times)
-                d.Value = i/max_iterations;
+                dialog_box.Value = i/max_iterations;
                 drawnow
-                if d.CancelRequested
+                if dialog_box.CancelRequested
                     break
                 end
             end
-            
-            pause(1)
-            
         end
     end
 
 %% Convert to Celsius
     function convert_to_C()
+        c2k = 273.15;
         T_g_out = T_g_out - c2k;
         T_h_out = T_h_out - c2k;
         T_o_out = T_o_out - c2k;
@@ -279,34 +325,33 @@ V_g2 = V_g + delta(7);
 
 %% Change in m_a
 % kg/m^3, density of dry air at 20C and 1 atm
-rho_a = XDryAir('tK', T_g, 'rho');
+rho_a = XDryAir('tK', T_g, 'rho', p_g);
 
 % kg, mass of dry air
 m_a2 = rho_a * V_g2;
 
 delta(12) = m_a2 - m_a;
 
-
-
-
 %% dT_g/dt
-c1 = 1/(C_g*R_hg) + 1/(C_g*R_go);
+% c1 = 1/(C_g*R_hg) + 1/(C_g*R_go);
+% 
+% c2 = (c_p/C_g) * ((p_a * V_g/R_a) + (p_v * V_g/R_v));
+% 
+% c3 = (c_p/C_g) * ((p_a_dot * x(7) + x(6) * V_g_dot)/ R_a ...
+%     + ((p_v_dot * x(7) + x(5) * V_g_dot))/R_v);
+% 
+% % mass_flow_in = 0;
+% delta(1) = -(c3 + c1)*x(1) + c2/x(1) + x(2)/(C_g*R_hg) + x(3)/(C_g*R_go);
+% T_g2 = T_g + delta(1);
 
-c2 = (c_p/C_g) * ((p_a * V_g/R_a) + (p_v * V_g/R_v));
-
-c3 = (c_p/C_g) * ((p_a_dot * x(7) + x(6) * V_g_dot)/ R_a ...
-    + ((p_v_dot * x(7) + x(5) * V_g_dot))/R_v);
-
-% mass_flow_in = 0;
-delta(1) = -(c3 + c1)*x(1) + c2/x(1) + x(2)/(C_g*R_hg) + x(3)/(C_g*R_go);
-T_g2 = T_g + delta(1);
-%%
-
+[sensor1] = read_daq(i, fit_obj, 2, 20);
+T_g2 = sensor1.mu + 273.15;
+delta(1) = T_g2 - T_g;
 
 %% Change in m_v
 % Call XSteam with pressure in bar (kPa/100), and T in C
-p_g_bar = p_g2/100;
-T_g_C = T_g2 - 273.15;
+p_g_bar = p_g2/100; % convert pressure to bars
+T_g_C = T_g2 - 273.15; % convert temperature to C
 rho_v2 = XSteam('rho_pt', p_g_bar, T_g_C);
 m_v2 = rho_v2 * V_g2;
 delta(11) = (m_v2 - m_v) + pid_phi.out; % kg per time step
@@ -319,21 +364,34 @@ delta(2) = x(1)/(C_h * m_h * R_hg)...
 % T_h2 = T_h + delta(2);
 
 %% dp_s/dt (change in saturation pressure)
-p_s2 = calculate_saturation_pressure(T_g2);
+% p_s2 = calculate_saturation_pressure(T_g2);
+p_s2 = XSteam('psat_T', T_g2);
 delta(10) = p_s2 - p_s;
 
-%% dq/dt (change in humidity ratio)
-q2 = m_v2 / (m_a2 + m_v2);
-delta(8) = q2 - q;
-
 %% dp_v/dt
-p_v2 = q2 * p_g2/(q2 + 0.622);
+% p_v2 = q2 * p_g2/(q2 + 0.622);
+
+p_v2 = rho_v2 * T_o / 0.0022;
+% h = XSteam('hv_p', p_g2/100);
+% s = XSteam('s_pt', p_g2/100, T_g2-273.15);
+% p_v2 = XSteam('p_hs', h, s);
+% if any(isnan([h s p_v2]))
+%     keyboard
+% end
 if p_v2 > p_g2
     p_v2 = p_v;
 end
 delta(5) = p_v2 - p_v;
 
+%% dq/dt
+% q2 = m_v2 / (m_a2 + m_v2);
+% percent of moisture by volume
+% pmv2 = p_v2 / p_g2;
+% q2 = 0.622 * pmv2 / ((1 - pmv2) + 0.622 * pmv2);
+delta(8) = 0;
+
 %% dp_a/dt
+% p_a2 = p_g2 - p_v2;
 delta(6) = -delta(5);
 
 %% dphi/dt (change in relative humidity)
@@ -345,17 +403,21 @@ phi2 =  p_v2 / p_s2;
 
 delta(9) = phi2 - phi;
 
+%%
+%%                
+       
+
 end
 
 function create_plots(T_g_out, T_h_out, T_o_out, p_v_out, p_a_out, q_out,...
     phi_out, p_s_out, P_h_out, setpoint_T, max_iterations, m_steam)
 %% Humidity plot
-h1 = figure(1);
-yyaxis left
-plot(q_out)
-ylabel('Humidity Ratio')
-
-yyaxis right
+figure(1)
+% yyaxis left
+% plot(q_out)
+% ylabel('Humidity Ratio')
+% 
+% yyaxis right
 plot(phi_out)
 ylabel('Relative Humidity')
 xlabel('Time')
@@ -363,7 +425,7 @@ grid on
 
 
 %% Pressure plot
-h2 = figure(2);
+figure(2)
 subplot(3,1,1)
 plot(p_v_out)
 title('Pressure (kPa)')
@@ -385,7 +447,7 @@ legend({'p_s'}, 'Location', 'best')
 ylabel('p_s')
 
 %% Temperature plot
-h3 = figure(3); subplot(2,1,1)
+figure(3); subplot(2,1,1)
 
 % Gas mixture temperature
 plot(T_g_out); hold on; grid on
@@ -408,8 +470,8 @@ legend({'P_h'},'Location','best')
 ylabel('Power (W)')
 
 %%
-h4 = figure(4);
-plot(m_steam)
+% figure(4)
+% plot(m_steam)
 end
 
 
