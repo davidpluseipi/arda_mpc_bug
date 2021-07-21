@@ -11,6 +11,20 @@ configurePin(arduino_obj,'D2','DigitalOutput');
 % Temperature / Humidity
 sensor = addon(arduino_obj, 'Adafruit/DHT22', 'A1');
 
+%% Setup NI
+ni=daq("ni");
+ni.Rate = 100;
+ni.addinput("cDAQ1Mod8","ai1","Thermocouple");
+%     d.addinput("cDAQ1Mod8","ai3","Thermocouple");
+%     d.addinput("cDAQ1Mod8","ai4","Thermocouple");
+for i = 1:length(ni.Channels)
+    ni.Channels(i).ThermocoupleType = "J";
+end
+sensor1 = sensor();
+sensor1.wire = '1234';
+
+
+
 % Turn on the heater
 writeDigitalPin(arduino_obj,'D2',1)
 

@@ -1,15 +1,23 @@
 clear
 close all
 clc
+tic
+setpoints = struct('T', 40, 'phi', 0.50);
+settings = struct(...
+    'setpoints', setpoints,...
+    'T_g0_sim', 20,...
+    'T_o', 20,...
+    'T_h0', 50,...
+    'T_s', 1,...
+    'N', 30*20,... % 30=1min irl
+    'off', 1e6,...
+    'simulation', false,...
+    'ni', true,...
+    'arduino', true);
+settings.max_iterations = settings.N/settings.T_s;
+settings.stop_at = settings.off/settings.T_s; % (Iteration)
 
-delta_T = 20;
-T_o0 = 35;
-T_h0 = 50;
-T_s = 1;
-N = 10;
-off = 1e6;
-
-data = arda_numerical(delta_T, T_o0, T_h0, T_s, N/T_s, off/T_s);
+data = arda_numerical(settings);
 
 price = 0.1036;  % $/kWh
 cost = 0;
@@ -18,3 +26,7 @@ for i = 1:numel(data.P_h)
    cost = cost + price * data.P_h(i)/(1000*60*60);
 end
 fprintf('Cost for this run: $%.8f\n', cost)
+toc
+
+times = [20  47.9;...
+         60 123.4];
