@@ -1,0 +1,5 @@
+Turning off power to blower.
+Turning off power to all heaters.
+Sounding alarm.
+
+EMERGENCY! Evacuate immediately!!
