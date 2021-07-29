@@ -2,10 +2,15 @@
 clear; clc; close all
 
 %% Setup
-bob = arda();
-deadpool = gcp;
+p = true; % parallel
+if p
+    deadpool = gcp;
+    bob = main_fcn(deadpool);
+else
+    bob = main_fcn();
+end
 %% Main function
-[bob] = main_fcn(bob, deadpool);
+
 %% Results
 % try
 % disp('B')

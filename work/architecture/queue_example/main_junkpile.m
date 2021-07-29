@@ -31,31 +31,6 @@ while ~bob.self_test_done
 end
 disp('Self Test Complete')
 
-%% Check for errors
-alerts = cell(length(bob.errors), 1);
-if bob.self_test_done
-    % Check to see if any of the errors show up in the alert table
-    if any(cellfun(@(x) ismember(string(x), alert_table{:,1}), bob.errors))
-        for i = 1:length(bob.errors)
-            % Get the alert levels for each error
-            alerts{i} = alert_table{alert_table{:,1} == bob.errors{i}, 2};
-        end
-    end
-end
 
-% Handle red alerts
-if any(cellfun(@(x) ismember("red", x), alerts))
-    bob.emergency();
-    if bob.emergency_procedures_done
-        imshow('simulating_computer_shutdown.png')
-        return
-    end
-end
-
-% Handle yellow alerts
-if any(cellfun(@(x) ismember("yellow", x), alerts))
-    bob.shutdown();
-    return
-end
 
 %% EOF

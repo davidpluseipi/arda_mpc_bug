@@ -1,23 +1,19 @@
 classdef arda < handle
     
     properties (SetObservable = true)
-        listener_emergency
-        listener_idle
-        listener_off
-        listener_self_test
-        listener_startup
-        %
-        emergency_done
-        idle_done
-        off_done
-        running_done
-        self_test_done
-        startup_done
-        shutdown_done
+        emergency_done = false
+        idle_done = false
+        prestartup_done = false
+        running_done = false
+        selftest_done = false
+        startup_done = false
+        shutdown_done = false
+        
+
     end
     
     properties
-        air_temp
+        air_temp = 20
         alert_table
         baseline_data
         computer_power = 0
@@ -25,104 +21,54 @@ classdef arda < handle
         component2 = 0
         component3 = 0
         self_test_data
+        alerts = cell(0,1)
+        errors = cell(0,1)
+        red_alert = false
+        yellow_alert = false
     end
     
     events
         emergency
         idle
-        off
+        prestartup
         running
-        self_test
+        selftest
         startup
         shutdown
     end
     
     methods
-        function obj = arda()
-            listener_emergency = addlistener(obj, 'emergency',...
-                @arda.run_emergency);
-            obj.listener_emergency = listener_emergency;
+        % Ordinary method
+        function obj = do_stuff(obj)
             
-            listener_idle = addlistener(obj, 'idle',...
-                @arda.run_idle);
-            obj.listener_idle = listener_idle;
-            
-            listener_off = addlistener(obj, 'off',...
-                @arda.run_off);
-            obj.listener_off = listener_off;
-            
-            listener_self_test = addlistener(obj, 'self_test',...
-                @arda.run_self_test);
-            obj.listener_self_test = listener_self_test;
-            
-            listener_startup = addlistener(obj, 'startup',...
-                @arda.run_startup);
-            obj.listener_startup = listener_startup;
         end
         
-        function obj = check_stuff(obj,~)
-            obj.air_temp = obj.air_temp + 20;
-            if obj.air_temp >= 200
-                obj = arda.run_emergency;
-            end
-        end
-    end
-    
-    methods (Static = true)
-        function obj = run_emergency(obj,~)
-            disp('Entry: emergency')
-            obj.component1 = 0;
-            obj.component2 = 0;
-            obj.component3 = 0;
-            obj.emergency_done = true;
-            disp('Exit: emergency')
-        end
-        
-        function obj = run_idle(obj,~)
-            disp('Entry: idle')
-            obj.idle_done = true;
-            disp('Exit: idle')
-        end
-        
-        function obj = run_off(obj,~)
-            disp('Entry: off')
-            obj.computer_power = 1;
-            obj.component1 = 0;
-            obj.component2 = 0;
-            obj.component3 = 0;
-            obj.off_done = true;
-            disp('Exit: off')
-        end
-        
-        function obj = run_self_test(obj,~)
-            disp('Entry: self_test')
-            S = load('self_test.mat','A');
-            obj.baseline_data = S.A;
-            obj.self_test_data = zeros(1,numel(obj.baseline_data));
-            count = 1;
-            while ~isequal(obj.self_test_data, obj.baseline_data)
-                % Acquire data
-                for i = 1:10
-                    obj.self_test_data(i) = i;
+        function check4errors(arda)
+            %% Check for errors
+            arda.alerts = cell(length(arda.errors), 1);
+            
+            if arda.selftest_done
+                % Check to see if any of the errors show up in the alert table
+                if any(cellfun(@(x) ismember(string(x), arda.alert_table{:,1}), arda.errors))
+                    for i = 1:length(arda.errors)
+                        % Get the alert levels for each error
+                        arda.alerts{i} = arda.alert_table{arda.alert_table{:,1} == arda.errors{i}, 2};
+                    end
                 end
-                if count >= 3
-                    error('Self test failed to acquire data to mactch the baseline.')
-                end
-                count = count + 1;
             end
-            obj.self_test_done = true;
-            disp('Exit: self_test')
-        end
-               
-        function obj = run_startup(obj,~)
-            disp('Entry: startup') 
-            obj.component1 = 1;
-            obj.component2 = 1;
-            obj.component3 = 1;
-            S = load('matlab.mat','T');
-            obj.alert_table = S.T;
-            obj.startup_done = 1;
-            disp('Exit: startup') 
+            
+            % Handle red alerts
+            if any(cellfun(@(x) ismember("red", x), arda.alerts))
+                arda.red_alert = true;
+                notify(bob, 'emergency')
+            end
+            
+            % Handle yellow alerts
+            if any(cellfun(@(x) ismember("yellow", x), arda.alerts))
+                arda.yellow_alert = true;
+                notify(arda, 'shutdown')
+            end
+            
         end
     end
     

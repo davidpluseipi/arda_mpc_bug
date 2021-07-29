@@ -1,9 +1,9 @@
-function H = copy_from(B,H)
+function out = copy_from(in, out)
 
-p = properties(B);
+p = properties(in);
 for i = 1:numel(p)
-   if ~isa(B.(p{i}), 'listener')
-       H.(p{i}) = B.(p{i});
+   if ~isa(in.(p{i}), 'handle')
+       out.(p{i}) = in.(p{i});
    end
 end
 
