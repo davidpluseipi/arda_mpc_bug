@@ -2,6 +2,10 @@ function arda = check4errors(arda)
 %% Check for errors
 arda.alerts = cell(length(arda.errors), 1);
 
+if arda.air_temp > 100
+    arda.log_error("overtemp");
+end
+
 if arda.selftest_done
     % Check to see if any of the errors show up in the alert table
     if any(cellfun(@(x) ismember(string(x), arda.alert_table{:,1}), arda.errors))
@@ -18,7 +22,7 @@ function take_action()
 % Handle red alerts
     if any(cellfun(@(x) ismember("red", x), arda.alerts))
         arda.red_alert = true;
-        notify(bob, 'emergency')
+        notify(arda, 'emergency')
     end
     
     % Handle yellow alerts

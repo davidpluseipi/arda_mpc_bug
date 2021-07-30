@@ -11,7 +11,6 @@ classdef arda < handle
     end
     
     properties
-        air_temp = 20
         alert_table
         baseline_data
         computer_power = 0
@@ -24,9 +23,16 @@ classdef arda < handle
         red_alert = false
         yellow_alert = false
         idx {mustBeNumeric}
+        parallel
+        pool
     end
     
-    properties 
+    properties
+        air_temp = 20
+    end
+    
+    properties
+        fail_overtemp = false
         fail_selftest = false
     end
     
@@ -41,6 +47,13 @@ classdef arda < handle
     end
     
     methods
+        % Constructor
+        function obj = arda()
+            if nargin ~= 0
+                error('arda class accepts 0 arguments.')
+            end
+        end
+        
         check4errors(arda)
         obj = do_stuff(obj)
         log_error(arda, er)

@@ -1,17 +1,16 @@
-function [bob] = main_fcn_test(varargin)
-if nargin < 2 || nargin > 3
-    error('Incorrect number of inputs.')
-else
-    bob = varargin{1};
-    zoe = varargin{2};
-end
+function [bob] = main(bob, options)
 
-if nargin == 3
-    parallel = true;
-    deadpool = varargin{:};
-else
-    parallel = false;
-end
+    arguments
+        bob handle
+        options.parallel (1,1) {mustBeNumericOrLogical} = false
+        options.fail_selftest (1,1) {mustBeNumericOrLogical} = false
+        options.fail_overtemp (1,1) {mustBeNumericOrLogical} = false
+    end
+
+bob.parallel = options.parallel;
+bob.fail_selftest = options.fail_selftest;
+bob.fail_overtemp = options.fail_overtemp;
+zoe = responder(bob); %#ok<NASGU>
 
 notify(bob, 'prestartup');
 notify(bob, 'startup')
@@ -22,13 +21,14 @@ if bob.red_alert || bob.yellow_alert
     return
 end
 
+if bob.parallel 
+    bob.pool = gcp;
+end
+
 count = 1;
 while true
-    
     bob = stuff_happens(bob);
-    
-    if parallel % Use parpool
-        
+    if bob.parallel 
         if ~exist('F','var')
             fcn_handle = @bob.check4errors;
             F = parfeval(fcn_handle, 1);
@@ -38,14 +38,8 @@ while true
                 clearvars F
             end
         end
-        
-    end
-    if bob.air_temp > 100
-        bob.log_error("Overtemp");
     end
     check4errors(bob)
-    
-    
     if bob.red_alert || bob.yellow_alert
         return
     end
@@ -61,8 +55,12 @@ end
 
 function obj = stuff_happens(obj)
 
-obj.air_temp = obj.air_temp + 20;
-disp(obj.air_temp)
+%% TEST
+delta = 0;
+if obj.fail_overtemp
+    delta = 100;
+end
+obj.air_temp = obj.air_temp + delta;
 
 end
 
