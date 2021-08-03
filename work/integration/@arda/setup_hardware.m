@@ -1,7 +1,7 @@
 function setup_hardware(arda)
-if ~arda.settings.simulation_only
+if ~arda.simulation_only
     %% Setup Arduino
-    if arda.settings.arduino
+    if arda.using_arduino_hardware
         arda.arduino_daq_obj = arduino('COM4' ,'Uno', 'Libraries',...
             {'Adafruit/DHT22'});
         
@@ -14,7 +14,7 @@ if ~arda.settings.simulation_only
     end
     
     %% Setup NI
-    if arda.settings.ni
+    if arda.using_ni_hardware
         arda.ni_daq_obj = daq("ni");
         arda.ni_daq_obj.Rate = 100;
         arda.ni_daq_obj.addinput("cDAQ1Mod8","ai1","Thermocouple");

@@ -1,66 +1,74 @@
 function create_plots(arda)
+%% Create plots from the output data
 
+%% Data management
 c2k = 273.15;
-arda.T_g_out = arda.T_g_out - c2k;
-arda.T_h_out = arda.T_h_out - c2k;
-arda.T_o_out = arda.T_o_out - c2k;
+T_g = arda.outputs(:,1) - c2k;
+% T_h = arda.outputs(:,2) - c2k; % save for later
+T_o = arda.outputs(:,3) - c2k;
+p_v = arda.outputs(:,5);
+p_a = arda.outputs(:,6);
+p_s = arda.outputs(:,10);
+P_h = arda.P_h;
 
 %% Humidity plot
 figure
-% yyaxis left
-% plot(q_out)
-% ylabel('Humidity Ratio')
-%
-% yyaxis right
-plot(arda.phi_out)
+plot(arda.phi)
 ylabel('Relative Humidity')
 xlabel('Time')
 grid on
 
-
 %% Pressure plot
 figure
 subplot(3,1,1)
-plot(arda.p_v_out)
+
+% Partial pressure of vapor
+plot(p_v)
 title('Pressure (kPa)')
 grid on
 legend({'p_v'}, 'Location', 'best')
 ylabel('p_v')
 
+% Partial pressure of air
 subplot(3,1,2)
-plot(arda.p_a_out)
+plot(p_a)
 grid on
 legend({'p_a'}, 'Location', 'best')
 ylabel('p_a')
 
+% Saturation pressure
 subplot(3,1,3)
-plot(arda.p_s_out)
+plot(p_s)
 grid on
 xlabel('Time')
 legend({'p_s'}, 'Location', 'best')
 ylabel('p_s')
 
 %% Temperature plot
-figure; subplot(2,1,1)
+figure
+subplot(2,1,1)
 
 % Gas mixture temperature
-plot(arda.T_g_out); hold on; grid on
+plot(T_g)
+hold on
+grid on
 
 % Heater temperature
-plot(arda.T_h_out)
+% plot(T_h) % save for later
 
 % Plot a horizontal line at the setpoint
-plot(arda.settings.setpoints.T * ones(arda.max_iterations,1), '--k')
+plot((arda.temperature_setpoint - c2k) * ones(arda.max_iterations,1), '--k')
 
 % Plot a horizontal line at the outside temperature
-plot(arda.T_o_out, '--m')
+plot(T_o, '--m')
 ylabel('Temp. (C)')
-legend({'T_g', 'T_h', 'SP', 'T_o'}, 'Location', 'best')
+legend({'T_g', 'Setpoint', 'T_o'}, 'Location', 'best')
 xlim([1 arda.max_iterations])
 
 % Power setting of the heater
 subplot(2,1,2)
-plot(arda.P_h_out); grid on
+plot(P_h)
+grid on
 legend({'P_h'},'Location','best')
 ylabel('Power (W)')
 xlim([1 arda.max_iterations])

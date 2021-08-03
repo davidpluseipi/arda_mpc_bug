@@ -1,12 +1,12 @@
 classdef controller_pid < handle
     properties
         % Time step
-        Ts {mustBeNumeric} = 1
+        step_size {mustBeNumeric} = 1
         
         % Controller gains
-        Kp {mustBeNumeric} = 1
-        Ki {mustBeNumeric} = 0
-        Kd {mustBeNumeric} = 0
+        K_p {mustBeNumeric} = 1
+        K_i {mustBeNumeric} = 0
+        K_d {mustBeNumeric} = 0
         
         % Derivative low-pass filter time constant
         tau {mustBeNumeric} = 0
