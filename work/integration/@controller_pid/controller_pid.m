@@ -35,5 +35,7 @@ classdef controller_pid < handle
                 error('Too many arguments. controller_pid class takes 0 arguments.')
             end
         end
+        
+         calculate_controller_output(controller_pid, setpoint, measurement)
     end
 end

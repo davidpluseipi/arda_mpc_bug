@@ -31,4 +31,4 @@ assert(bob.red_alert,'Overtemp failure introduced, but red alert was not reporte
 
 %% Test 6: fail overtemp parallel
 [bob, ~] = main(arda(), 'fail_overtemp', true, 'parallel', true);
-assert(bob.red_alert,'Overtemp failure introduced, but red alert was not reported. (parallel)')
+assert(bob.red_alert,'Overtemp failure introduced, but red alert was no     t reported. (parallel)')
