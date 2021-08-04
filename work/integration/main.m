@@ -1,5 +1,7 @@
 function [bob, data] = main(bob, options)
+%% [bob, data] = main(bob, options)
 
+%% Manage input arguments
 arguments
     bob handle
     options.simulation_only (1,1) {mustBeNumericOrLogical} = false
@@ -18,13 +20,15 @@ bob.heater = options.heater;
 bob.parallel = options.parallel;
 bob.fail_selftest = options.fail_selftest;
 bob.fail_overtemp = options.fail_overtemp;
+
+% Create the responder object with listeners
 zoe = responder(bob); %#ok<NASGU>
 
-
-%%
+%% Setup
 bob.setup_hardware();
 bob.progress_dialog();
-bob.define_constants(); c2k = 273.15;
+bob.define_constants(); 
+c2k = 273.15;
 
 if bob.simulation_only
     
@@ -111,6 +115,7 @@ save data.mat
 %% Main loop
     function B1 = main_loop()
         
+        %% If using the parpool, get the worker started aquiring data
         if bob.parallel
             
             % Create a pollable data queue to run on a worker
@@ -121,12 +126,13 @@ save data.mat
             
         end
         
+        %% Create a figure and store its axes handle
         if bob.live_plot
-            % Create a figure and store its axes handle
-            figure; ax = gca;
+            figure
+            ax = gca;
         end
         
-        %%
+        %% Loop
         for i = 1:bob.max_iterations
             
             %% Insert errors as necessary
@@ -138,10 +144,12 @@ save data.mat
                 % When needed, tune a new controller on a separate worker
                 if ~exist('F','var')
                     
+                    % Call function on separate worker
                     F2 = parfeval(@bob.tune_new_controller, 1);
                     
                 else
                     
+                    % If F2 has its returned output arguments, fetch them
                     if numel(F2.OutputArguments) > 0
                         
                         B2 = fetchOutputs(F2); %#ok<NASGU>
@@ -158,11 +166,15 @@ save data.mat
             bob.pid.calculate_controller_output( ...
                 bob.temperature_setpoint, bob.T_g);
             
+            %% Actuator
             % When using the Arduino, the heater can be on or off
             if ~bob.simulation_only
                 
+                % If the heater is connected to the arduino
                 if strcmp(bob.heater, 'arduino')
                     
+                    % Any commanded output turns the heater full on, 
+                    % otherwise, turn it off
                     if bob.pid.out > 0
                         
                         writeDigitalPin(bob.arduino_daq_obj,'D2',1)  % ON
@@ -174,32 +186,43 @@ save data.mat
                     end
                     pause(1) % Don't burn out the Arduino relay
                     
-                elseif strcmp(bob.heater, 'ni')
-                    
+                elseif strcmp(bob.heater, 'ni') % If heater is connected to
+                    % the ni hardware
+                    %
+                    %
                 end
             end
             
+            %% Controller
             % Calculate output for humidity controller
             bob.pid_phi.calculate_controller_output(...
                 bob.relative_humidity_setpoint, bob.phi);
             
-            % Record the power setting of the heater at each time step
+            
+            %% Actuator: steam
+            %
+            %
+            %
+            
+            
+            %% Data collection
+            % Record the outputs of each controller
             bob.P_h(i) = bob.pid.out;
             bob.m_steam(i) = bob.pid_phi.out;
             
+            
             %% Plant Model
-            % On the first time through the loop, use the x_0 above. After
-            % that, the initial values to give to the ode are the last ones
-            % it gave.
+            % On the first time through the loop, use the x_0 above, 
+            % otherwise, use the output of the ode.
             if i >= 2
                 bob.x_0 = y(end,:);
             end
             
             % Call ode solver
-            [~,y] = ode23(@(t,y) odefun(t, y, bob), [0 bob.step_size],...
-                bob.x_0);
+            [~,y] = ode23(@(t,y)odefun(t,y,bob),[0 bob.step_size],bob.x_0);
             
-            % Capture sensor measurements
+            %% Acquire data from hardware sensors
+            % If using hardware sensors, overwrite the simulated values
             if ~bob.simulation_only
                 
                 if bob.using_ni_hardware
@@ -207,7 +230,9 @@ save data.mat
                     if bob.parallel
                         
                         try
-                            
+                            % It is possible to poll the queue on the
+                            % worker before it's ready and get invalid
+                            % values, so this is in a try
                             y(end,1) = poll(p) + 273.15;  % T_g
                             y(end,2) = poll(p) + 273.15;  % T_h
                             
@@ -218,7 +243,8 @@ save data.mat
                         end
                         
                     else
-                        
+                        % If not operating on a parpool, acquire the data
+                        % locally.
                         daq_data = read(bob.ni_daq_obj);
                         y(end,1) = daq_data.cDAQ1Mod8_ai1 + 273.15; % T_g
                         y(end,2) = daq_data.cDAQ1Mod8_ai3 + 273.15; % T_h
@@ -226,15 +252,17 @@ save data.mat
                     end
                 end
                 
+                
                 if bob.using_arduino_hardware
-                    
+                    % Read humidity values from the arduino hardware
                     y(end,9) = readHumidity(bob.sensor_dht22);
                     
                 end
             end
             
+            % Manage output data
             bob.outputs(i,:) = y(end,:);
-            bob.T_g = bob.outputs(i,1);
+            bob.T_g = bob.outputs(i,1); 
             bob.T_h = bob.outputs(i,2);
             bob.phi = bob.outputs(i,9);
             bob.T_o = bob.outputs(i,3);
@@ -243,6 +271,7 @@ save data.mat
             bob.p_s = bob.outputs(i,10);
             
             
+            % If user has opted for a live plot of the date during the run
             if bob.live_plot
                 
                 yy = bob.outputs(:,1) - 273.15;
@@ -250,12 +279,13 @@ save data.mat
                 plot(ax, xx, yy, '.b')
                 grid on
                 hold on
-                axis([1 bob.max_iterations 20 50])
+                axis([1 bob.max_iterations...
+                    min(bob.outputs(:,1))-2 max(bob.outputs(:,1))+2])
                 
             end
             
-            check4errors(bob)
-            
+            %% Check for errors after each loop
+            check4errors(bob)   
             
             if bob.red_alert || bob.yellow_alert
                 
@@ -264,11 +294,13 @@ save data.mat
                     B1 = fetchOutputs(F1);
                     
                 end
+                
                 return
                 
             end
             
             
+            %% Update the progress bar
             if bob.progress_bar && ismember(i, bob.draw_times)
                 
                 bob.dialog_box.Value = i/bob.max_iterations;
@@ -279,8 +311,11 @@ save data.mat
                 end
                 
             end
+            
         end
         
+        
+        %% After the main loop, be sure to fetch any data from the worker
         if bob.parallel
             B1 = fetchOutputs(F1);
         else
@@ -292,7 +327,7 @@ end
 
 function obj = stuff_happens(obj)
 
-%% TEST
+%% Overtemp
 delta = 0;
 if obj.fail_overtemp
     delta = 300;
