@@ -36,7 +36,7 @@ classdef arda < handle
         red_alert (1,1) {mustBeNumericOrLogical} = false
         yellow_alert (1,1) {mustBeNumericOrLogical} = false
         idx (1,1) {mustBeNumeric} = 1
-        parallel (1,1) {mustBeNumericOrLogical} = false;
+        
         pool
         fig
         dialog_box
@@ -50,7 +50,6 @@ classdef arda < handle
     properties % gas mixture and simulation
         x_0 (12,1) {mustBeNumeric} = zeros(12,1)
         m_a (1,1) {mustBeNumeric}
-        
         m_v (1,1) {mustBeNumeric}
         p_a (1,1) {mustBeNumeric}
         p_g (1,1) {mustBeNumeric}
@@ -72,17 +71,22 @@ classdef arda < handle
         settings (1,1) {isstruct} = struct(...
             'T_g_sim', 20,...
             'T_o', 20,...
-            'T_h', 100);
+            'T_h', 20);
         step_size (1,1) {mustBeNumeric} = 1
-        max_iterations (1,1) {mustBeNumeric} = 600
-        temperature_setpoint (1,1) {mustBeNumeric} = 35
+        max_iterations (1,1) {mustBeNumeric} % default value assigned in main.m
+        temperature_setpoint (1,1) {mustBeNumeric}
         relative_humidity_setpoint (1,1) {mustBeNumeric} = 0.5
         progress_bar (1,1) {mustBeNumericOrLogical} = false
         live_plot (1,1) {mustBeNumericOrLogical} = true
-        simulation_only (1,1) {mustBeNumericOrLogical} = false
-        using_ni_hardware (1,1) {mustBeNumericOrLogical} = false
-        using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false
-        heater {ischar} = 'arduino'
+        final_plots (1,1) {mustBeNumericOrLogical} = false
+        window_style {ischar} = 'docked'
+        
+        heater {ischar} % default value assigned in main.m
+        parallel (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
+        simulation_only (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
+        using_ni_hardware (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
+        using_arduino_hardware (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
+        
     end
     
     properties % failures
@@ -104,11 +108,12 @@ classdef arda < handle
         % Constructor
         function obj = arda()
             if nargin ~= 0
-                error('arda class accepts 0 arguments.')
+                error('arda does not accept input arguments.')
             end
             obj.m_steam = zeros(obj.max_iterations, 1);
             obj.P_h = zeros(obj.max_iterations, 1);
             obj.draw_times = 1:2:obj.max_iterations;
+            
         end
         
         check4errors(arda)

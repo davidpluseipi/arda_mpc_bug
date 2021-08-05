@@ -1,35 +1,98 @@
-function [bob, data] = main(bob, options)
-%% [bob, data] = main(bob, options)
-
+function [bob] = main(bob, options)
+%% MAIN  Run aRDA
+%
+%   [ARDA_OBJ, DATA] = MAIN(ARDA_OBJ) runs the aRDA with default options.
+%
+%   [ARDA_OBJ, DATA] = MAIN(ARDA_OBJ, OPTIONS) runs with specified options.
+%
+%   OPTIONS:
+% 
+%      (name)                     (values)         (default)
+%      'fail_overtemp'            true/false       default = false
+%      'fail_selftest'            true/false       default = false
+%      'heater'                   'arduino'/'ni'   default = 'arduino'
+%      'parallel'                 true/false       default = false
+%      'using_arduino_hardware'   true/false       default = false
+%      'using_ni_hardware'        true/false       default = false
+%      'simulation_only'          true/false       default = true
+%
+%    
 %% Manage input arguments
 arguments
+    
     bob handle
-    options.simulation_only (1,1) {mustBeNumericOrLogical} = false
-    options.using_ni_hardware (1,1) {mustBeNumericOrLogical} = false
-    options.using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false
-    options.heater {ischar} = 'arduino'
+    options.fail_overtemp (1,1) {mustBeNumericOrLogical} = false 
+    options.fail_selftest (1,1) {mustBeNumericOrLogical} = false 
+    options.heater {ischar} = 'arduino' % 'arduino' or 'ni'
+    options.max_iterations (1,1) {mustBeNumeric} = 30
     options.parallel (1,1) {mustBeNumericOrLogical} = false
-    options.fail_selftest (1,1) {mustBeNumericOrLogical} = false
-    options.fail_overtemp (1,1) {mustBeNumericOrLogical} = false
+    options.using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false
+    options.using_ni_hardware (1,1) {mustBeNumericOrLogical} = false
+    options.simulation_only (1,1) {mustBeNumericOrLogical} = false
+    options.temperature_setpoint (1,1) {mustBeNumeric} = 45
+    
 end
 
-bob.simulation_only = options.simulation_only;
-bob.using_ni_hardware = options.using_ni_hardware;
-bob.using_arduino_hardware = options.using_arduino_hardware;
-bob.heater = options.heater;
-bob.parallel = options.parallel;
-bob.fail_selftest = options.fail_selftest;
 bob.fail_overtemp = options.fail_overtemp;
+bob.fail_selftest = options.fail_selftest;
+bob.heater = options.heater;
+bob.max_iterations = options.max_iterations;
+bob.parallel = options.parallel;
+bob.simulation_only = options.simulation_only;
+bob.using_arduino_hardware = options.using_arduino_hardware;
+bob.using_ni_hardware = options.using_ni_hardware;
+bob.temperature_setpoint = options.temperature_setpoint;
 
+% Check for conflicts
+if ~bob.using_arduino_hardware && ~bob.using_ni_hardware
+    
+    if ~bob.simulation_only
+        
+        bob.simulation_only = true;
+        bob.parallel = false;
+        warning(['Input arguments to main.m indicate no hardware and ',...
+            'did not indicate simulation only. The arda object property ',...
+            '''simulation_only'' has been set to TRUE and ''parallel'' ',...
+            'has been set to FALSE.'])
+    end
+    
+else
+    if bob.simulation_only
+        bob.simulation_only = false;
+        warning(['Input arguments to main.m indicate at least one type ',...
+            'of hardware is being used.  The arda object property ',...
+            '''simulation_only'' has been set to FALSE.'])
+    end
+end
+
+
+if ~ismember(bob.heater, {'arduino', 'ni'})
+    error(['Invalid input argument. arda object property heater has ',...
+        'the following options: ''arduino'', ''ni''']);
+end
+
+if bob.parallel && ~bob.using_arduino_hardware && ~bob.using_ni_hardware
+    
+    error(['Invalid input arguments. Property ''parallel'' requires that',...
+        '''using_arduino_hardware'' or ''using_ni_hardware'' be TRUE.']);
+    
+end
+    
+
+%% Setup
 % Create the responder object with listeners
 zoe = responder(bob); %#ok<NASGU>
 
-%% Setup
+% Set the default figure window style
+set(0,'DefaultFigureWindowStyle', bob.window_style)
+
+% Run the arda 'startup' methods 
 bob.setup_hardware();
 bob.progress_dialog();
 bob.define_constants(); 
 c2k = 273.15;
 
+% Set the initial temperatures
 if bob.simulation_only
     
     bob.T_g = bob.settings.T_g_sim + c2k;
@@ -71,27 +134,23 @@ notify(bob, 'startup')
 notify(bob, 'selftest')
 
 % If there have been any red alerts or yellow alerts, take action
-check4errors(bob)
+check4errors(bob);
 if bob.red_alert || bob.yellow_alert
-    
-    data = {};
     return
-    
 end
 
-% Call the main loop (nested function below)
+%% Call the main loop (nested function below)
 B = main_loop(); %#ok<NASGU>
 
 % If there were any red alerts or yellow alerts in the main loop, return
 if bob.red_alert || bob.yellow_alert
-    
-    data = {};
     return
-    
 end
 
 % Create the plots for the output data
-bob.create_plots();
+if bob.final_plots
+    bob.create_plots();
+end
 
 % Close the progress bar
 if bob.progress_bar
@@ -101,15 +160,11 @@ if bob.progress_bar
     
 end
 
-% Put some specific data into a table
-data = table(bob.outputs(:,1), bob.outputs(:,2), bob.outputs(:,3),...
-    bob.outputs(:,5), bob.outputs(:,6), bob.outputs(:,8),...
-    bob.outputs(:,9), bob.outputs(:,10), bob.P_h,...
-    'VariableNames', {'T_g', 'T_h', 'T_o', 'p_v', 'p_a', 'q', 'phi',...
-    'p_s', 'P_h'});
+% Set the default figure window style back to normal
+set(0,'DefaultFigureWindowStyle','normal')
 
-% Save the contents of the workspace
-save data.mat
+% Delete the arduino object
+bob.arduino_daq_obj = [];
 
 
 %% Main loop
@@ -135,8 +190,7 @@ save data.mat
         %% Loop
         for i = 1:bob.max_iterations
             
-            %% Insert errors as necessary
-            stuff_happens(bob);
+            
            
             %% Tune new controller
             if bob.parallel
@@ -145,8 +199,9 @@ save data.mat
                 if ~exist('F','var')
                     
                     % Call function on separate worker
+                    warning('off','MATLAB:hwsdk:general:nosave')
                     F2 = parfeval(@bob.tune_new_controller, 1);
-                    
+                    warning('on','MATLAB:hwsdk:general:nosave')
                 else
                     
                     % If F2 has its returned output arguments, fetch them
@@ -177,11 +232,11 @@ save data.mat
                     % otherwise, turn it off
                     if bob.pid.out > 0
                         
-                        writeDigitalPin(bob.arduino_daq_obj,'D2',1)  % ON
+                        writeDigitalPin(bob.arduino_daq_obj,'D2',1);  % ON
                         
                     else
                         
-                        writeDigitalPin(bob.arduino_daq_obj,'D2',0)  % OFF
+                        writeDigitalPin(bob.arduino_daq_obj,'D2',0);  % OFF
                         
                     end
                     pause(1) % Don't burn out the Arduino relay
@@ -236,9 +291,9 @@ save data.mat
                             y(end,1) = poll(p) + 273.15;  % T_g
                             y(end,2) = poll(p) + 273.15;  % T_h
                             
-                        catch er
+                        catch 
                             
-                            disp(er.message)
+                            %disp(er.message)
                             
                         end
                         
@@ -280,19 +335,24 @@ save data.mat
                 grid on
                 hold on
                 axis([1 bob.max_iterations...
-                    min(bob.outputs(:,1))-2 max(bob.outputs(:,1))+2])
+                    floor(min(bob.outputs(:,1))-2-273.15)...
+                    ceil(max(bob.outputs(:,1))+2-273.15)])
                 
             end
             
+            %% Insert errors as necessary
+            stuff_happens(bob);
+           
             %% Check for errors after each loop
-            check4errors(bob)   
+            check4errors(bob);
             
             if bob.red_alert || bob.yellow_alert
                 
                 if bob.parallel
  
                     B1 = fetchOutputs(F1);
-                    
+                else
+                    B1 = {};
                 end
                 
                 return
@@ -330,7 +390,7 @@ function obj = stuff_happens(obj)
 %% Overtemp
 delta = 0;
 if obj.fail_overtemp
-    delta = 300;
+    delta = 500;
 end
 obj.T_g = obj.T_g + delta;
 

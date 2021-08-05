@@ -2,8 +2,8 @@ function arda = check4errors(arda)
 %% Check for errors
 arda.alerts = cell(length(arda.errors), 1);
 
-if arda.T_g > 400
-    arda.log_error("overtemp");
+if arda.T_g >= 500
+    arda.log_error('overtemp');
 end
 
 if arda.selftest_done

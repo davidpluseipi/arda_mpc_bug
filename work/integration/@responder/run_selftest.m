@@ -2,7 +2,7 @@ function run_selftest(obj,~)
 
 % Static method
 try
-    disp('Entry: selftest')
+    %disp('Entry: selftest')
     S = load('load4selftest.mat','A');
     obj.baseline_data = S.A;
     obj.selftest_data = zeros(1,numel(obj.baseline_data));
@@ -27,6 +27,6 @@ catch er
 end
 
 obj.selftest_done = true;
-disp('Exit: selftest')
+%disp('Exit: selftest')
 
 end
