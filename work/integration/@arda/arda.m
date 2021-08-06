@@ -1,4 +1,4 @@
-classdef arda < handle
+classdef arda < matlab.System
     
     properties % constants
         constants (1,4) {isvector}
@@ -73,19 +73,19 @@ classdef arda < handle
             'T_o', 20,...
             'T_h', 20);
         step_size (1,1) {mustBeNumeric} = 1
-        max_iterations (1,1) {mustBeNumeric} % default value assigned in main.m
-        temperature_setpoint (1,1) {mustBeNumeric}
+        max_iterations (1,1) {mustBeNumeric} = 30 
+        temperature_setpoint (1,1) {mustBeNumeric} = 20
         relative_humidity_setpoint (1,1) {mustBeNumeric} = 0.5
         progress_bar (1,1) {mustBeNumericOrLogical} = false
-        live_plot (1,1) {mustBeNumericOrLogical} = true
+        live_plot (1,1) {mustBeNumericOrLogical} = false
         final_plots (1,1) {mustBeNumericOrLogical} = false
-        window_style {ischar} = 'docked'
+        window_style {mustBeMember(window_style,{'normal','docked'})} = 'docked'
         
-        heater {ischar} % default value assigned in main.m
-        parallel (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
-        simulation_only (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
-        using_ni_hardware (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
-        using_arduino_hardware (1,1) {mustBeNumericOrLogical} % default value assigned in main.m
+        heater {mustBeMember(heater,{'arduino','ni'})} = 'arduino'
+        parallel (1,1) {mustBeNumericOrLogical} = false 
+        simulation_only (1,1) {mustBeNumericOrLogical}
+        using_ni_hardware (1,1) {mustBeNumericOrLogical} = false 
+        using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false 
         
     end
     
@@ -106,14 +106,23 @@ classdef arda < handle
     
     methods
         % Constructor
-        function obj = arda()
-            if nargin ~= 0
-                error('arda does not accept input arguments.')
+        function obj = arda(prop_args)
+            
+            arguments
+                prop_args.?arda
             end
+            
+            properties = namedargs2cell(prop_args);
+            
             obj.m_steam = zeros(obj.max_iterations, 1);
             obj.P_h = zeros(obj.max_iterations, 1);
             obj.draw_times = 1:2:obj.max_iterations;
             
+            if size(properties,2) >= 1
+                for i = 1:size(properties,1)
+                    obj.(properties{i,1}) = properties{i,2};
+                end
+            end
         end
         
         check4errors(arda)

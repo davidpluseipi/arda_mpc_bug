@@ -1,4 +1,4 @@
-function [bob] = main(bob, options)
+function [bob] = main(bob)
 %% MAIN  Run aRDA
 %
 %   [ARDA_OBJ, DATA] = MAIN(ARDA_OBJ) runs the aRDA with default options.
@@ -18,30 +18,30 @@ function [bob] = main(bob, options)
 %
 %    
 %% Manage input arguments
-arguments
-    
-    bob handle
-    options.fail_overtemp (1,1) {mustBeNumericOrLogical} = false 
-    options.fail_selftest (1,1) {mustBeNumericOrLogical} = false 
-    options.heater {ischar} = 'arduino' % 'arduino' or 'ni'
-    options.max_iterations (1,1) {mustBeNumeric} = 30
-    options.parallel (1,1) {mustBeNumericOrLogical} = false
-    options.using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false
-    options.using_ni_hardware (1,1) {mustBeNumericOrLogical} = false
-    options.simulation_only (1,1) {mustBeNumericOrLogical} = false
-    options.temperature_setpoint (1,1) {mustBeNumeric} = 45
-    
-end
-
-bob.fail_overtemp = options.fail_overtemp;
-bob.fail_selftest = options.fail_selftest;
-bob.heater = options.heater;
-bob.max_iterations = options.max_iterations;
-bob.parallel = options.parallel;
-bob.simulation_only = options.simulation_only;
-bob.using_arduino_hardware = options.using_arduino_hardware;
-bob.using_ni_hardware = options.using_ni_hardware;
-bob.temperature_setpoint = options.temperature_setpoint;
+% arguments
+%     
+%     bob handle
+%     options.fail_overtemp (1,1) {mustBeNumericOrLogical} = false 
+%     options.fail_selftest (1,1) {mustBeNumericOrLogical} = false 
+%     options.heater {ischar} = 'arduino' % 'arduino' or 'ni'
+%     options.max_iterations (1,1) {mustBeNumeric} = 30
+%     options.parallel (1,1) {mustBeNumericOrLogical} = false
+%     options.using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false
+%     options.using_ni_hardware (1,1) {mustBeNumericOrLogical} = false
+%     options.simulation_only (1,1) {mustBeNumericOrLogical} = false
+%     options.temperature_setpoint (1,1) {mustBeNumeric} = 45
+%     
+% end
+% 
+% bob.fail_overtemp = options.fail_overtemp;
+% bob.fail_selftest = options.fail_selftest;
+% bob.heater = options.heater;
+% bob.max_iterations = options.max_iterations;
+% bob.parallel = options.parallel;
+% bob.simulation_only = options.simulation_only;
+% bob.using_arduino_hardware = options.using_arduino_hardware;
+% bob.using_ni_hardware = options.using_ni_hardware;
+% bob.temperature_setpoint = options.temperature_setpoint;
 
 % Check for conflicts
 if ~bob.using_arduino_hardware && ~bob.using_ni_hardware
@@ -187,11 +187,12 @@ bob.arduino_daq_obj = [];
             ax = gca;
         end
         
+        t = linspace(0, bob.max_iterations, 4);
+        s = 22 + [1 2 2 1];
+        
         %% Loop
         for i = 1:bob.max_iterations
             
-            
-           
             %% Tune new controller
             if bob.parallel
                 
@@ -218,6 +219,17 @@ bob.arduino_daq_obj = [];
             
             %% Controller
             % Calculate output for temperature controller
+            
+            if i > t(1) && i < t(2)
+                bob.temperature_setpoint = s(1) + c2k;
+            elseif i >= t(2) && i < t(3)
+                bob.temperature_setpoint = s(2) + c2k;
+            elseif i >= t(3) && i < t(4)
+                bob.temperature_setpoint = s(3) + c2k;
+            else
+                bob.temperature_setpoint = s(4) + c2k;
+            end
+            
             bob.pid.calculate_controller_output( ...
                 bob.temperature_setpoint, bob.T_g);
             
@@ -242,9 +254,9 @@ bob.arduino_daq_obj = [];
                     pause(1) % Don't burn out the Arduino relay
                     
                 elseif strcmp(bob.heater, 'ni') % If heater is connected to
-                    % the ni hardware
-                    %
-                    %
+                    
+                    write(bob.ni_daq_obj, bob.pid.out*ones(...
+                        bob.ni_daq_obj.Rate, 1))
                 end
             end
             

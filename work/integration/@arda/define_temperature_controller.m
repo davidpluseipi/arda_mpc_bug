@@ -20,8 +20,11 @@ arda.pid.tau = tau;
 arda.pid.min_output = 0;
 if arda.simulation_only
     arda.pid.max_output = 11000; % Max watts from heater
-elseif ~arda.simulation_only && arda.using_arduino_hardware
+elseif arda.using_arduino_hardware
     arda.pid.max_output = 1;
+end
+if arda.using_ni_hardware
+    arda.pid.max_output = 10;
 end
 
 end
