@@ -8,5 +8,5 @@ for j = 1:length(obj.Channels)
     obj.Channels(j).ThermocoupleType = "J";
 end
 obj.addoutput("cDAQ1Mod3","ao1","Voltage")
-k = ones(300*100,1);
+k = ones(60*100,1);
 readwrite(obj, 10*k)

@@ -11,6 +11,11 @@ classdef arda < matlab.System
     properties % controls
         pid (1,1) {isobject}
         pid_phi (1,1) {isobject}
+        G
+        C1
+        C2
+        t
+        s
     end
     
     properties (SetObservable = true)

@@ -79,7 +79,7 @@ lsim(sys, u, t)
 
 %% For state-space, plot the unforced response 
 % from a given state
-x0 = [0.8];
+x0 = 0.8;
 figure
 initial(model_state_space, x0)
 grid on

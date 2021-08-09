@@ -1,47 +1,8 @@
 function [bob] = main(bob)
 %% MAIN  Run aRDA
 %
-%   [ARDA_OBJ, DATA] = MAIN(ARDA_OBJ) runs the aRDA with default options.
+%   [ARDA_OBJ] = MAIN(ARDA_OBJ) runs the aRDA with preselected options.
 %
-%   [ARDA_OBJ, DATA] = MAIN(ARDA_OBJ, OPTIONS) runs with specified options.
-%
-%   OPTIONS:
-% 
-%      (name)                     (values)         (default)
-%      'fail_overtemp'            true/false       default = false
-%      'fail_selftest'            true/false       default = false
-%      'heater'                   'arduino'/'ni'   default = 'arduino'
-%      'parallel'                 true/false       default = false
-%      'using_arduino_hardware'   true/false       default = false
-%      'using_ni_hardware'        true/false       default = false
-%      'simulation_only'          true/false       default = true
-%
-%    
-%% Manage input arguments
-% arguments
-%     
-%     bob handle
-%     options.fail_overtemp (1,1) {mustBeNumericOrLogical} = false 
-%     options.fail_selftest (1,1) {mustBeNumericOrLogical} = false 
-%     options.heater {ischar} = 'arduino' % 'arduino' or 'ni'
-%     options.max_iterations (1,1) {mustBeNumeric} = 30
-%     options.parallel (1,1) {mustBeNumericOrLogical} = false
-%     options.using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false
-%     options.using_ni_hardware (1,1) {mustBeNumericOrLogical} = false
-%     options.simulation_only (1,1) {mustBeNumericOrLogical} = false
-%     options.temperature_setpoint (1,1) {mustBeNumeric} = 45
-%     
-% end
-% 
-% bob.fail_overtemp = options.fail_overtemp;
-% bob.fail_selftest = options.fail_selftest;
-% bob.heater = options.heater;
-% bob.max_iterations = options.max_iterations;
-% bob.parallel = options.parallel;
-% bob.simulation_only = options.simulation_only;
-% bob.using_arduino_hardware = options.using_arduino_hardware;
-% bob.using_ni_hardware = options.using_ni_hardware;
-% bob.temperature_setpoint = options.temperature_setpoint;
 
 % Check for conflicts
 if ~bob.using_arduino_hardware && ~bob.using_ni_hardware
@@ -82,6 +43,9 @@ end
 %% Setup
 % Create the responder object with listeners
 zoe = responder(bob); %#ok<NASGU>
+
+% Create the gauges app
+app = gauges();
 
 % Set the default figure window style
 set(0,'DefaultFigureWindowStyle', bob.window_style)
@@ -166,6 +130,35 @@ set(0,'DefaultFigureWindowStyle','normal')
 % Delete the arduino object
 bob.arduino_daq_obj = [];
 
+%% Controller Tuning
+nx = 8; % order of state space model
+n = nx + 1;
+Y = [ [zeros(n,1); bob.outputs(:,1)] [zeros(n,1); bob.outputs(:,9)] ];
+U = [zeros(n,1); bob.P_h];
+ze = iddata(Y, U, bob.step_size);
+ze.Name = 'ARDA';
+ze.InputUnit = 'Voltage';
+ze.InputName = 'Power';
+ze.OutputUnit = {'K','percent'};
+ze.OutputName = {'Temperature','Relative Humidity'};
+
+% Split the data into estimation and validation datasets
+ze1 = ze(1 : (2*size(ze,1)/3) );
+zv1 = ze( (2*size(ze,1)/3 + 1) : end);
+
+sys = ssest(ze1, nx);
+% compare(ze1, sys)
+
+bob.G = idtf(sys, 'InputName', 'q', 'OutputName','y');
+bob.C1 = pidtune(tf(1),'PID');
+bob.C2 = pidtune(tf(2),'PID');
+
+if ~isempty(find(pole(bob.G) > 0, 1))
+    disp('Unstable: Poles in the right hand plane.')
+    disp(pole(bob.G))
+end
+
+
 
 %% Main loop
     function B1 = main_loop()
@@ -187,8 +180,6 @@ bob.arduino_daq_obj = [];
             ax = gca;
         end
         
-        t = linspace(0, bob.max_iterations, 4);
-        s = 22 + [1 2 2 1];
         
         %% Loop
         for i = 1:bob.max_iterations
@@ -220,16 +211,23 @@ bob.arduino_daq_obj = [];
             %% Controller
             % Calculate output for temperature controller
             
-            if i > t(1) && i < t(2)
-                bob.temperature_setpoint = s(1) + c2k;
-            elseif i >= t(2) && i < t(3)
-                bob.temperature_setpoint = s(2) + c2k;
-            elseif i >= t(3) && i < t(4)
-                bob.temperature_setpoint = s(3) + c2k;
-            else
-                bob.temperature_setpoint = s(4) + c2k;
+            for j = 1:length(bob.t)
+                
+                if i > bob.t(j) && i < bob.t(j+1)
+                    bob.temperature_setpoint = bob.s(j);
+                    break
+                end
+                
+%                 if i > bob.t(1) && i < bob.t(2)
+%                     bob.temperature_setpoint = s(1);
+%                 elseif bob.i >= t(2) && i < bob.t(3)
+%                     bob.temperature_setpoint = s(2);
+%                 elseif bob.i >= t(3) && bob.i < t(4)
+%                     bob.temperature_setpoint = s(3);
+%                 else
+%                     bob.temperature_setpoint = s(4);
+%                 end
             end
-            
             bob.pid.calculate_controller_output( ...
                 bob.temperature_setpoint, bob.T_g);
             
@@ -329,13 +327,18 @@ bob.arduino_daq_obj = [];
             
             % Manage output data
             bob.outputs(i,:) = y(end,:);
-            bob.T_g = bob.outputs(i,1); 
+            bob.T_g = bob.outputs(i,1);
             bob.T_h = bob.outputs(i,2);
             bob.phi = bob.outputs(i,9);
             bob.T_o = bob.outputs(i,3);
             bob.p_v = bob.outputs(i,5);
             bob.p_a = bob.outputs(i,6);
             bob.p_s = bob.outputs(i,10);
+            
+            % Update the gauges
+            app.AirCGauge.Value = bob.T_g - 273.15;
+            app.HeaterCGauge.Value = bob.T_h - 273.15;
+            app.PowerVGauge.Value = bob.P_h(i);
             
             
             % If user has opted for a live plot of the date during the run
@@ -347,8 +350,8 @@ bob.arduino_daq_obj = [];
                 grid on
                 hold on
                 axis([1 bob.max_iterations...
-                    floor(min(bob.outputs(:,1))-2-273.15)...
-                    ceil(max(bob.outputs(:,1))+2-273.15)])
+                    floor(min(bob.outputs(:,1)) - 0.5 - 273.15)...
+                    ceil(max(bob.outputs(:,1)) + 0.5 - 273.15)])
                 
             end
             
