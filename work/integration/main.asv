@@ -127,37 +127,36 @@ end
 % Set the default figure window style back to normal
 set(0,'DefaultFigureWindowStyle','normal')
 
-% Delete stuff
+% Delete the arduino object
 bob.arduino_daq_obj = [];
-delete(app)
 
-% %% Controller Tuning
-% nx = 8; % order of state space model
-% n = nx + 1;
-% Y = [ [zeros(n,1); bob.outputs(:,1)] [zeros(n,1); bob.outputs(:,9)] ];
-% U = [zeros(n,1); bob.P_h];
-% ze = iddata(Y, U, bob.step_size);
-% ze.Name = 'ARDA';
-% ze.InputUnit = 'Voltage';
-% ze.InputName = 'Power';
-% ze.OutputUnit = {'K','percent'};
-% ze.OutputName = {'Temperature','Relative Humidity'};
-% 
-% % Split the data into estimation and validation datasets
-% ze1 = ze(1 : (2*size(ze,1)/3) );
-% zv1 = ze( (2*size(ze,1)/3 + 1) : end);
-% 
-% sys = ssest(ze1, nx);
-% % compare(ze1, sys)
-% 
-% bob.G = idtf(sys, 'InputName', 'q', 'OutputName','y');
-% bob.C1 = pidtune(tf(1),'PID');
-% bob.C2 = pidtune(tf(2),'PID');
-% 
-% if ~isempty(find(pole(bob.G) > 0, 1))
-%     disp('Unstable: Poles in the right hand plane.')
-%     disp(pole(bob.G))
-% end
+%% Controller Tuning
+nx = 8; % order of state space model
+n = nx + 1;
+Y = [ [zeros(n,1); bob.outputs(:,1)] [zeros(n,1); bob.outputs(:,9)] ];
+U = [zeros(n,1); bob.P_h];
+ze = iddata(Y, U, bob.step_size);
+ze.Name = 'ARDA';
+ze.InputUnit = 'Voltage';
+ze.InputName = 'Power';
+ze.OutputUnit = {'K','percent'};
+ze.OutputName = {'Temperature','Relative Humidity'};
+
+% Split the data into estimation and validation datasets
+ze1 = ze(1 : (2*size(ze,1)/3) );
+zv1 = ze( (2*size(ze,1)/3 + 1) : end);
+
+sys = ssest(ze1, nx);
+% compare(ze1, sys)
+
+bob.G = idtf(sys, 'InputName', 'q', 'OutputName','y');
+bob.C1 = pidtune(tf(1),'PID');
+bob.C2 = pidtune(tf(2),'PID');
+
+if ~isempty(find(pole(bob.G) > 0, 1))
+    disp('Unstable: Poles in the right hand plane.')
+    disp(pole(bob.G))
+end
 
 
 
@@ -232,7 +231,6 @@ delete(app)
             bob.pid.calculate_controller_output( ...
                 bob.temperature_setpoint, bob.T_g);
             
-            
             %% Actuator
             % When using the Arduino, the heater can be on or off
             if ~bob.simulation_only
@@ -255,13 +253,12 @@ delete(app)
                     
                 elseif strcmp(bob.heater, 'ni') % If heater is connected to
                     
-                    P2V = [0 1.523 2]; % power to voltage
-                    voltage = P2V(ceil(...
-                        bob.pid.out/(bob.pid.max_output/2)) + 1);
-                    t = 1; % sec
-                    k = ones(t*bob.ni_daq_obj.Rate, 1); % column vector
+                    P2V = [0 0; 1 1.523; 2 2]; % power to voltage
+                    voltage = P2V(P2V(1,:) == round(bob.pid.out),2);
+                    t = 10; % sec
+                    k = ones(t*obj.Rate, 1); % column vector
                     A = voltage*k; % A must be MxN where N is number of channels
-                    readwrite(bob.ni_daq_obj, A);
+                    write(obj, A)
                 end
             end
             

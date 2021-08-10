@@ -9,6 +9,7 @@ ni_daq_obj.addinput("cDAQ1Mod8","ai3","Thermocouple");
 for j = 1:length(ni_daq_obj.Channels)
     ni_daq_obj.Channels(j).ThermocoupleType = "J";
 end
+arda.ni_daq_obj.addoutput("cDAQ1Mod3","ao1","Voltage");
 
 %% Capture Data
 

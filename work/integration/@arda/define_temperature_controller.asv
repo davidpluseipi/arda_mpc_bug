@@ -1,9 +1,9 @@
 function define_temperature_controller(arda)
 
 if arda.simulation_only
-    tau = 2532;                                                                                                                 
-    tau_dead = 10;                                                                                                                                
-    P = (197.1 - 97.1)/97.1; % Percent change of input                                                                           
+    tau = 2532;                                                                      x %% Controller for large metal rolled up                                           20
+    tau_dead = 10;                                                                   x % % Set the time step                                                             21
+    P = (197.1 - 97.1)/97.1; % Percent change of input                               x % arda.pid.step_size = arda.step_size;                                            22
     N = ((25.81 - 22.87)/22.87) / tau; % Percent change of output / tau
     L = tau_dead;
     R = tau_dead / tau;

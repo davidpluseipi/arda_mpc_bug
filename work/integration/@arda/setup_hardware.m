@@ -23,7 +23,7 @@ if ~arda.simulation_only
         for j = 1:length(arda.ni_daq_obj.Channels)
             arda.ni_daq_obj.Channels(j).ThermocoupleType = "J";
         end
-        arda.ni_daq_obj.addoutput("cDAQ1Mod3","ao1","Voltage")
+        arda.ni_daq_obj.addoutput("cDAQ1Mod3","ao1","Voltage");
     end
 end
 end

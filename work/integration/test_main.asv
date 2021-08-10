@@ -20,34 +20,31 @@ bob = arda();
 bob.using_arduino_hardware = false;
 bob.using_ni_hardware = true;
 bob.heater = 'ni';
-bob.temperature_setpoint = 40;
+bob.temperature_setpoint = 25;
 bob.max_iterations = 1800;
 bob.live_plot = true;
 bob.t = linspace(0, bob.max_iterations, 5);
-bob.s = bob.temperature_setpoint + 273.15 + [1 1 0 0 0]*10;
+bob.s = bob.temperature_setpoint + 273.15 + [0 1 0 0 0]*10;
 bob = main(bob);
 figure
 plot(bob.outputs(:,1)-273.15); grid on
 assert(~bob.yellow_alert,'No failures introduced, but yellow alert was reported. (parallel)')
 assert(~bob.red_alert,'No failures introduced, but red alert was reported. (parallel)')
 
-%% Test 3: normal operation with hardware in parallel
-disp('Starting Test 3')
-bob = arda();
-bob.using_arduino_hardware = false;
-bob.using_ni_hardware = true;
-bob.heater = 'ni';
-bob.temperature_setpoint = 33;
-bob.max_iterations = 1800;
-bob.live_plot = true;
-bob.t = linspace(0, bob.max_iterations, 5);
-bob.s = bob.temperature_setpoint + 273.15 + [1 1 0 0 0]*5;
-bob = main(bob);
-figure
-plot(bob.outputs(:,1)-273.15); grid on
-assert(~bob.yellow_alert, 'No failures introduced, but yellow alert was reported. (parallel)')
-assert(~bob.red_alert, 'No failures introduced, but red alert was reported. (parallel)')
-
+% %% Test 3: normal operation with hardware in parallel
+% disp('Starting Test 3')
+% bob = arda();
+% bob = main(bob, ...
+%     'using_arduino_hardware', true,...
+%     'using_ni_hardware', true, ...
+%     'parallel', true,...
+%     'temperature_setpoint', 45,...
+%     'max_iterations', 30);
+% figure
+% plot(bob.outputs(:,1)-273.15); grid on
+% assert(~bob.yellow_alert, 'No failures introduced, but yellow alert was reported. (parallel)')
+% assert(~bob.red_alert, 'No failures introduced, but red alert was reported. (parallel)')
+% 
 % %% Test 4: fail selftest with hardware
 % disp('Starting Test 4')
 % bob = arda();
