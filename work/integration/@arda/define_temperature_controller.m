@@ -16,12 +16,26 @@ if arda.simulation_only
     arda.pid.min_output = 0;
     arda.pid.max_output = 11000;
 else
-    arda.pid.K_p = 63.7;
-    arda.pid.K_i = 3.51;
-    arda.pid.K_d = 0;
+    arda.pid.K_p = arda.C.Kp;
+    arda.pid.K_i = arda.C.Ki;
+    arda.pid.K_d = arda.C.Kd;
     arda.pid.tau = 1;
     arda.pid.min_output = 0;
-    arda.pid.max_output = 11000;
+    arda.pid.max_output = 5/6;
+    
+%     arda.pid.K_p = 0.0179;
+%     arda.pid.K_i = 1.37e-6;
+%     arda.pid.K_d = 0;
+%     arda.pid.tau = 1;
+%     arda.pid.min_output = 0;
+%     arda.pid.max_output = 5/6;
+    
+%     arda.pid.K_p = 63.7;
+%     arda.pid.K_i = 3.51;
+%     arda.pid.K_d = 0;
+%     arda.pid.tau = 1;
+%     arda.pid.min_output = 0;
+%     arda.pid.max_output = 5/6;
 end
 
 end

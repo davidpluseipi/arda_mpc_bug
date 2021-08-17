@@ -6,7 +6,7 @@ p_a_dot = 0;
 V_g_dot = 0;
 
 % Constants
-C_g = arda.specific_heat_fit_obj(arda.T_g); % J/(kg*K), Specific heat capacity of
+C_g = arda.specific_heat_fit_obj(arda.T_g); % J/(kg*K), Specific heat capacity
 C_h = 4660;         % J/(kg*K), Specific heat capacity of the heater
 c_p = 0.718;        % Specific heat of air at constant pressure
 m_h = 2.8;          % kg, Mass of the heater (about 6 lbs)

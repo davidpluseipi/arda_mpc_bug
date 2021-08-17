@@ -38,22 +38,26 @@ if bob.parallel && ~bob.using_arduino_hardware && ~bob.using_ni_hardware
         '''using_arduino_hardware'' or ''using_ni_hardware'' be TRUE.']);
     
 end
-    
+
 
 %% Setup
+bob.resistance = zeros(length(bob.max_iterations),1);
+bob.time = NaT(length(bob.max_iterations),1);
+
 % Create the responder object with listeners
 zoe = responder(bob); %#ok<NASGU>
 
 % Create the gauges app
 app = gauges();
+app.max_iterationsEditField.Value = bob.max_iterations;
 
 % Set the default figure window style
 set(0,'DefaultFigureWindowStyle', bob.window_style)
 
-% Run the arda 'startup' methods 
+% Run the arda 'startup' methods
 bob.setup_hardware();
 bob.progress_dialog();
-bob.define_constants(); 
+bob.define_constants();
 c2k = 273.15;
 
 % Set the initial temperatures
@@ -67,11 +71,11 @@ elseif ~bob.simulation_only && bob.using_ni_hardware
     daq_data = read(bob.ni_daq_obj);
     bob.T_g = daq_data.cDAQ1Mod8_ai1 + c2k;
     bob.T_h = daq_data.cDAQ1Mod8_ai3 + c2k;
-
+    
 end
 
 % Establish a consistent set of ICs
-bob.set_initial_conditions(); 
+bob.set_initial_conditions();
 
 % Create and define the temperature controller
 bob.pid = controller_pid();
@@ -82,15 +86,15 @@ bob.pid_phi = controller_pid();
 bob.define_relative_humidity_controller();
 
 % Update the progress bar
-if bob.progress_bar 
+if bob.progress_bar
     
     bob.dialog_box.Message = "Processing...";
-    drawnow 
+    drawnow
     
 end
 
-% Convert the temperature setpoint to Kelvin
-bob.temperature_setpoint = bob.temperature_setpoint + 273.15;
+
+
 
 % Notify listeners of events. She then runs the code for those states.
 notify(bob, 'prestartup')
@@ -129,7 +133,7 @@ set(0,'DefaultFigureWindowStyle','normal')
 
 % Delete stuff
 bob.arduino_daq_obj = [];
-delete(app)
+%delete(app)
 
 
 
@@ -144,16 +148,37 @@ delete(app)
             % Create a pollable data queue to run on a worker
             p = parallel.pool.PollableDataQueue;
             
-            % Run capture data on a worker for (max_iterations) seconds 
+            % Run capture data on a worker for (max_iterations) seconds
             F1 = parfeval(@capture_data, 1, p, bob.max_iterations);
             
         end
         
         %% Create a figure and store its axes handle
-        if bob.live_plot
-            figure
-            ax = gca;
+%         if bob.live_plot
+%             figure
+%             ax = gca;
+%         end
+        
+        %% Establish setpoints
+        bob.temperature_setpoint = bob.T_g;
+        bob.s = bob.s + bob.temperature_setpoint;
+        
+        bob.setpoints = zeros(length(bob.max_iterations),1);
+        for i = 1:bob.max_iterations
+            
+            for j = 1:length(bob.t)-1
+                
+                if i >= bob.t(j) && i < bob.t(j+1)
+                    
+                    bob.setpoints(i) = bob.s(j);
+                    break
+                    
+                end
+                
+            end
+            
         end
+        bob.setpoints = [bob.setpoints bob.setpoints(end)];
         
         
         %% Loop
@@ -185,27 +210,10 @@ delete(app)
             
             %% Controller
             % Calculate output for temperature controller
-            
-            for j = 1:length(bob.t)
-                
-                if i > bob.t(j) && i < bob.t(j+1)
-                    bob.temperature_setpoint = bob.s(j);
-                    break
-                end
-                
-%                 if i > bob.t(1) && i < bob.t(2)
-%                     bob.temperature_setpoint = s(1);
-%                 elseif bob.i >= t(2) && i < bob.t(3)
-%                     bob.temperature_setpoint = s(2);
-%                 elseif bob.i >= t(3) && bob.i < t(4)
-%                     bob.temperature_setpoint = s(3);
-%                 else
-%                     bob.temperature_setpoint = s(4);
-%                 end
-            end
+            bob.temperature_setpoint = bob.setpoints(i);
             bob.pid.calculate_controller_output( ...
                 bob.temperature_setpoint, bob.T_g);
-            
+            bob.P_h(i) = bob.pid.out;
             
             %% Actuator
             % When using the Arduino, the heater can be on or off
@@ -214,7 +222,7 @@ delete(app)
                 % If the heater is connected to the arduino
                 if strcmp(bob.heater, 'arduino')
                     
-                    % Any commanded output turns the heater full on, 
+                    % Any commanded output turns the heater full on,
                     % otherwise, turn it off
                     if bob.pid.out > 0
                         
@@ -228,13 +236,15 @@ delete(app)
                     pause(1) % Don't burn out the Arduino relay
                     
                 elseif strcmp(bob.heater, 'ni') % If heater is connected to
-                    
-                    P2V = [0 1.523 2]; % power to voltage
-                    voltage = P2V(ceil(...
-                        bob.pid.out/(bob.pid.max_output/2)) + 1);
-                    t = 1; % sec
+                    T_cold = 20; % C
+                    R_cold = 120; % Ohms (measured)
+                    T_hot = 400; % C
+                    R_hot = 10; % Ohms (guess)
+                    bob.resistance(i) = (R_cold - R_hot)/(T_cold - T_hot) * (bob.T_g-273.15) + R_cold;
+                    bob.voltage(i) = sqrt(bob.resistance(i)*bob.pid.out); % NI9263 outputs 0-10V
+                    t = 0.02; % sec
                     k = ones(t*bob.ni_daq_obj.Rate, 1); % column vector
-                    A = voltage*k; % A must be MxN where N is number of channels
+                    A = k*min(bob.voltage(i), 10); % A must be MxN where N is number of channels
                     readwrite(bob.ni_daq_obj, A);
                 end
             end
@@ -243,22 +253,15 @@ delete(app)
             % Calculate output for humidity controller
             bob.pid_phi.calculate_controller_output(...
                 bob.relative_humidity_setpoint, bob.phi);
-            
+            bob.m_steam(i) = bob.pid_phi.out;
             
             %% Actuator: steam
             %
             %
-            %
-            
-            
-            %% Data collection
-            % Record the outputs of each controller
-            bob.P_h(i) = bob.pid.out;
-            bob.m_steam(i) = bob.pid_phi.out;
             
             
             %% Plant Model
-            % On the first time through the loop, use the x_0 above, 
+            % On the first time through the loop, use the x_0 above,
             % otherwise, use the output of the ode.
             if i >= 2
                 bob.x_0 = y(end,:);
@@ -282,7 +285,7 @@ delete(app)
                             y(end,1) = poll(p) + 273.15;  % T_g
                             y(end,2) = poll(p) + 273.15;  % T_h
                             
-                        catch 
+                        catch
                             
                             %disp(er.message)
                             
@@ -307,9 +310,10 @@ delete(app)
             end
             
             % Manage output data
+            bob.time(i) = datetime('now');
             bob.outputs(i,:) = y(end,:);
-            bob.T_g = bob.outputs(i,1);
-            bob.T_h = bob.outputs(i,2);
+            bob.T_g = bob.outputs(i,1); %disp(bob.T_g)
+            bob.T_h = bob.outputs(i,2); %disp(bob.T_h)
             bob.phi = bob.outputs(i,9);
             bob.T_o = bob.outputs(i,3);
             bob.p_v = bob.outputs(i,5);
@@ -319,33 +323,71 @@ delete(app)
             % Update the gauges
             app.AirCGauge.Value = bob.T_g - 273.15;
             app.HeaterCGauge.Value = bob.T_h - 273.15;
-            app.PowerVGauge.Value = bob.P_h(i);
+            app.PowerWGauge.Value = bob.P_h(i);
+            app.T_gEditField.Value = bob.T_g - 273.15;
+            app.T_hEditField.Value = bob.T_h - 273.15;
+            app.T_oEditField.Value = bob.T_o - 273.15;
+            app.p_gEditField.Value = bob.p_g;
+            app.p_vEditField.Value = bob.p_v;
+            app.p_aEditField.Value = bob.p_a;
+            app.V_gEditField.Value = bob.V_g;
+            app.phiEditField.Value = bob.phi;
+            app.m_vEditField.Value = bob.m_v;
+            app.m_aEditField.Value = bob.m_a;
+            app.P_hEditField.Value = bob.P_h(i);
+            app.iEditField.Value = i;
             
+            if strcmp(bob.heater, 'ni')
+                app.V_hEditField.Value = bob.voltage(i);
+            end
+            app.m_dotEditField.Value = 0;
+            app.vEditField.Value = 0;
             
             % If user has opted for a live plot of the date during the run
             if bob.live_plot
                 
-                yy = bob.outputs(:,1) - 273.15;
-                xx = 1:length(bob.outputs(:,1));
-                plot(ax, xx, yy, '.b')
-                grid on
-                hold on
-                axis([1 bob.max_iterations...
-                    floor(min(bob.outputs(:,1)) - 0.5 - 273.15)...
-                    ceil(max(bob.outputs(:,1)) + 0.5 - 273.15)])
+                % Simple plot
+                %                 yy = bob.outputs(:,1) - 273.15;
+                %                 xx = 1:length(bob.outputs(:,1));
+                %                 plot(ax, xx, yy, '.b')
+                %                 grid on
+                %                 hold on
+                %                 axis([1 bob.max_iterations...
+                %                     floor(min(bob.outputs(:,1)) - 0.5 - 273.15)...
+                %                     ceil(max(bob.outputs(:,1)) + 0.5 - 273.15)])
+                
+                % Use app
+                L = length(bob.outputs(:,1));
+                plot(app.UIAxes_12, 1:L, bob.outputs(:,1) - 273.15); 
+                plot(app.UIAxes_11, 1:L, bob.outputs(:,2) - 273.15); 
+                plot(app.UIAxes_10, 1:L, bob.outputs(:,3) - 273.15); 
+                plot(app.UIAxes_9, 1:L, bob.outputs(:,4)); 
+                plot(app.UIAxes_8, 1:L, bob.outputs(:,5)); 
+                plot(app.UIAxes_7, 1:L, bob.outputs(:,6)); 
+                plot(app.UIAxes_6, 1:L, bob.outputs(:,7)); 
+                plot(app.UIAxes_4, 1:L, bob.outputs(:,9)); 
+                plot(app.UIAxes_15, 1:L, bob.outputs(:,10)); 
+                plot(app.UIAxes_14, 1:L, bob.outputs(:,11)); 
+                plot(app.UIAxes_13, 1:L, bob.outputs(:,12)); 
+                plot(app.UIAxes_16, 1:length(bob.P_h), bob.P_h); 
+                if strcmp(bob.heater, 'ni')
+                    plot(app.UIAxes_17, 1:L, bob.voltage);
+                end
+                plot(app.UIAxes_18, 1:L, zeros(L,1));
+                plot(app.UIAxes_19, 1:L, zeros(L,1));
                 
             end
             
             %% Insert errors as necessary
             stuff_happens(bob);
-           
+            
             %% Check for errors after each loop
             check4errors(bob);
             
             if bob.red_alert || bob.yellow_alert
                 
                 if bob.parallel
- 
+                    
                     B1 = fetchOutputs(F1);
                 else
                     B1 = {};

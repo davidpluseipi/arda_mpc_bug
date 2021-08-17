@@ -12,10 +12,15 @@ classdef arda < matlab.System
         pid (1,1) {isobject}
         pid_phi (1,1) {isobject}
         G
+        C
         C1
         C2
         t
         s
+        setpoints
+        voltage
+        resistance
+        time {isdatetime}
     end
     
     properties (SetObservable = true)
@@ -55,7 +60,7 @@ classdef arda < matlab.System
     properties % gas mixture and simulation
         x_0 (12,1) {mustBeNumeric} = zeros(12,1)
         m_a (1,1) {mustBeNumeric}
-        m_v (1,1) {mustBeNumeric}
+        m_v (1,1) {mustBeNumeric} = 0
         p_a (1,1) {mustBeNumeric}
         p_g (1,1) {mustBeNumeric}
         p_s (1,1) {mustBeNumeric}

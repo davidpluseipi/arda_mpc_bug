@@ -4,7 +4,8 @@ c2k = 273.15;
 
 arda.T_o = arda.settings.T_o + c2k;
 arda.p_g = 101.325;     % kPa, Initial/constant pressure of the control volume.
-arda.V_g = 0.25;        % m^3, Initial/constant volume of aRDA "control volume"
+% arda.V_g = 0.25;        % m^3, Initial/constant volume of aRDA "control volume"
+arda.V_g = 0.0108223; % m^3, temp value for the prototype sample chamber
 
 % Calculate initial saturation pressure
 arda.p_s = XSteam('psat_T', arda.T_g);
