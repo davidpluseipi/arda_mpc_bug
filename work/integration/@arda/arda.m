@@ -21,6 +21,8 @@ classdef arda < matlab.System
         voltage
         resistance
         time {isdatetime}
+        V2
+        slope
     end
     
     properties (SetObservable = true)
@@ -127,7 +129,9 @@ classdef arda < matlab.System
             obj.m_steam = zeros(obj.max_iterations, 1);
             obj.P_h = zeros(obj.max_iterations, 1);
             obj.draw_times = 1:2:obj.max_iterations;
-            
+            obj.resistance = zeros(length(obj.max_iterations),1);
+            obj.time = NaT(length(obj.max_iterations),1);
+
             if size(properties,2) >= 1
                 for i = 1:size(properties,1)
                     obj.(properties{i,1}) = properties{i,2};

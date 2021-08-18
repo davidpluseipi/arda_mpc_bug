@@ -1,22 +1,18 @@
 % function C = test_online_tuning()
 
-load('bob.mat','bob')
-T_cold = 20; % C
-R_cold = 120; % Ohms (measured)
-T_hot = 400; % C
-R_hot = 10; % Ohms (guess)
-resistance = (R_cold - R_hot)/(T_cold - T_hot) * bob.outputs(:,1) + R_cold;
-voltage = sqrt(resistance.*bob.P_h);
-figure; yyaxis left; plot(bob.outputs(:,1)-273.15); yyaxis right; plot(voltage)
+load('run_6.mat','bob')
+
+figure; yyaxis left; plot(bob.outputs(:,1)-273.15); 
+yyaxis right; plot(bob.voltage)
 
 
 nx = 5; % order of state space model
 n = nx + 1;
 Y =  bob.outputs(:,1);%[zeros(n,1); bob.outputs(:,9)] ];
 
-U = voltage;
+U = bob.voltage;
 T_s = 1;
-ze = iddata(Y, U, T_s);
+ze = iddata(Y, U', T_s);
 ze.Name = 'ARDA';
 ze.InputUnit = 'V';
 ze.InputName = 'Voltage';
@@ -90,6 +86,7 @@ subplot(2,1,1); step(sys)
 subplot(2,1,2); impulse(sys)
 
 %% Tune
+C = pidtune(sys,'PID');
 pidTuner(sys,'PID')
-% C = pidtune(sys,'PID');
+
 

@@ -41,15 +41,14 @@ end
 
 
 %% Setup
-bob.resistance = zeros(length(bob.max_iterations),1);
-bob.time = NaT(length(bob.max_iterations),1);
-
 % Create the responder object with listeners
 zoe = responder(bob); %#ok<NASGU>
 
 % Create the gauges app
-app = gauges();
-app.max_iterationsEditField.Value = bob.max_iterations;
+if bob.live_plot
+    app = gauges();
+    app.max_iterationsEditField.Value = bob.max_iterations;
+end
 
 % Set the default figure window style
 set(0,'DefaultFigureWindowStyle', bob.window_style)
@@ -63,8 +62,8 @@ c2k = 273.15;
 % Set the initial temperatures
 if bob.simulation_only
     
-    bob.T_g = bob.settings.T_g_sim + c2k;
-    bob.T_h = bob.settings.T_h + c2k;
+    bob.T_g = bob.T_g + c2k;
+    bob.T_h = bob.T_h + c2k;
     
 elseif ~bob.simulation_only && bob.using_ni_hardware
     
@@ -180,7 +179,13 @@ bob.arduino_daq_obj = [];
         end
         bob.setpoints = [bob.setpoints bob.setpoints(end)];
         
-        
+        T_cold = 20; % C
+        R_cold = 120; % Ohms (measured)
+        T_hot = 400; % C
+        R_hot = R_cold*1.5; % Ohms (guess)
+        bob.slope = (R_cold - R_hot)/(T_cold - T_hot);
+        t = 0.02; % sec
+        k = ones(t*bob.ni_daq_obj.Rate, 1); % column vector
         %% Loop
         for i = 1:bob.max_iterations
             
@@ -210,9 +215,8 @@ bob.arduino_daq_obj = [];
             
             %% Controller
             % Calculate output for temperature controller
-            bob.temperature_setpoint = bob.setpoints(i);
-            bob.pid.calculate_controller_output( ...
-                bob.temperature_setpoint, bob.T_g);
+            %bob.temperature_setpoint = bob.setpoints(i);
+            bob.pid.calculate_controller_output(bob.setpoints(i), bob.T_g);
             bob.P_h(i) = bob.pid.out;
             
             %% Actuator
@@ -236,16 +240,11 @@ bob.arduino_daq_obj = [];
                     pause(1) % Don't burn out the Arduino relay
                     
                 elseif strcmp(bob.heater, 'ni') % If heater is connected to
-                    T_cold = 20; % C
-                    R_cold = 120; % Ohms (measured)
-                    T_hot = 400; % C
-                    R_hot = 10; % Ohms (guess)
-                    bob.resistance(i) = (R_cold - R_hot)/(T_cold - T_hot) * (bob.T_g-273.15) + R_cold;
+                    bob.resistance(i) = bob.slope * (bob.T_h-c2k) + R_cold;
                     bob.voltage(i) = sqrt(bob.resistance(i)*bob.pid.out); % NI9263 outputs 0-10V
-                    t = 0.02; % sec
-                    k = ones(t*bob.ni_daq_obj.Rate, 1); % column vector
+                    
                     A = k*min(bob.voltage(i), 10); % A must be MxN where N is number of channels
-                    readwrite(bob.ni_daq_obj, A);
+                    data = readwrite(bob.ni_daq_obj, A);
                 end
             end
             
@@ -282,8 +281,8 @@ bob.arduino_daq_obj = [];
                             % It is possible to poll the queue on the
                             % worker before it's ready and get invalid
                             % values, so this is in a try
-                            y(end,1) = poll(p) + 273.15;  % T_g
-                            y(end,2) = poll(p) + 273.15;  % T_h
+                            y(end,1) = poll(p) + c2k;  % T_g
+                            y(end,2) = poll(p) + c2k;  % T_h
                             
                         catch
                             
@@ -294,10 +293,10 @@ bob.arduino_daq_obj = [];
                     else
                         % If not operating on a parpool, acquire the data
                         % locally.
-                        daq_data = read(bob.ni_daq_obj);
-                        y(end,1) = daq_data.cDAQ1Mod8_ai1 + 273.15; % T_g
-                        y(end,2) = daq_data.cDAQ1Mod8_ai3 + 273.15; % T_h
-                        
+                        %daq_data = read(bob.ni_daq_obj, 1);
+                        y(end,1) = data.cDAQ1Mod8_ai1(1) + c2k; % T_g
+                        y(end,2) = data.cDAQ1Mod8_ai3(1) + c2k; % T_h
+                        bob.V2(i) = data.cDAQ1Mod5_ai0(1);
                     end
                 end
                 
@@ -320,13 +319,16 @@ bob.arduino_daq_obj = [];
             bob.p_a = bob.outputs(i,6);
             bob.p_s = bob.outputs(i,10);
             
+            % If user has opted for a live plot of the date during the run
+            if bob.live_plot
+                
             % Update the gauges
-            app.AirCGauge.Value = bob.T_g - 273.15;
-            app.HeaterCGauge.Value = bob.T_h - 273.15;
+            app.AirCGauge.Value = bob.T_g - c2k;
+            app.HeaterCGauge.Value = bob.T_h - c2k;
             app.PowerWGauge.Value = bob.P_h(i);
-            app.T_gEditField.Value = bob.T_g - 273.15;
-            app.T_hEditField.Value = bob.T_h - 273.15;
-            app.T_oEditField.Value = bob.T_o - 273.15;
+            app.T_gEditField.Value = bob.T_g - c2k;
+            app.T_hEditField.Value = bob.T_h - c2k;
+            app.T_oEditField.Value = bob.T_o - c2k;
             app.p_gEditField.Value = bob.p_g;
             app.p_vEditField.Value = bob.p_v;
             app.p_aEditField.Value = bob.p_a;
@@ -343,38 +345,38 @@ bob.arduino_daq_obj = [];
             app.m_dotEditField.Value = 0;
             app.vEditField.Value = 0;
             
-            % If user has opted for a live plot of the date during the run
-            if bob.live_plot
+            
                 
                 % Simple plot
-                %                 yy = bob.outputs(:,1) - 273.15;
+                %                 yy = bob.outputs(:,1) - c2k;
                 %                 xx = 1:length(bob.outputs(:,1));
                 %                 plot(ax, xx, yy, '.b')
                 %                 grid on
                 %                 hold on
                 %                 axis([1 bob.max_iterations...
-                %                     floor(min(bob.outputs(:,1)) - 0.5 - 273.15)...
-                %                     ceil(max(bob.outputs(:,1)) + 0.5 - 273.15)])
+                %                     floor(min(bob.outputs(:,1)) - 0.5 - c2k)...
+                %                     ceil(max(bob.outputs(:,1)) + 0.5 - c2k)])
                 
                 % Use app
                 L = length(bob.outputs(:,1));
-                plot(app.UIAxes_12, 1:L, bob.outputs(:,1) - 273.15); 
-                plot(app.UIAxes_11, 1:L, bob.outputs(:,2) - 273.15); 
-                plot(app.UIAxes_10, 1:L, bob.outputs(:,3) - 273.15); 
-                plot(app.UIAxes_9, 1:L, bob.outputs(:,4)); 
-                plot(app.UIAxes_8, 1:L, bob.outputs(:,5)); 
-                plot(app.UIAxes_7, 1:L, bob.outputs(:,6)); 
-                plot(app.UIAxes_6, 1:L, bob.outputs(:,7)); 
-                plot(app.UIAxes_4, 1:L, bob.outputs(:,9)); 
-                plot(app.UIAxes_15, 1:L, bob.outputs(:,10)); 
-                plot(app.UIAxes_14, 1:L, bob.outputs(:,11)); 
-                plot(app.UIAxes_13, 1:L, bob.outputs(:,12)); 
+                xx = 1:L;
+                plot(app.UIAxes_12, xx, bob.outputs(:,1) - c2k); 
+                plot(app.UIAxes_11, xx, bob.outputs(:,2) - c2k); 
+                plot(app.UIAxes_10, xx, bob.outputs(:,3) - c2k); 
+                plot(app.UIAxes_9, xx, bob.outputs(:,4)); 
+                plot(app.UIAxes_8, xx, bob.outputs(:,5)); 
+                plot(app.UIAxes_7, xx, bob.outputs(:,6)); 
+                plot(app.UIAxes_6, xx, bob.outputs(:,7)); 
+                plot(app.UIAxes_4, xx, bob.outputs(:,9)); 
+                plot(app.UIAxes_15, xx, bob.outputs(:,10)); 
+                plot(app.UIAxes_14, xx, bob.outputs(:,11)); 
+                plot(app.UIAxes_13, xx, bob.outputs(:,12)); 
                 plot(app.UIAxes_16, 1:length(bob.P_h), bob.P_h); 
                 if strcmp(bob.heater, 'ni')
-                    plot(app.UIAxes_17, 1:L, bob.voltage);
+                    plot(app.UIAxes_17, xx, bob.voltage);
                 end
-                plot(app.UIAxes_18, 1:L, zeros(L,1));
-                plot(app.UIAxes_19, 1:L, zeros(L,1));
+                plot(app.UIAxes_18, xx, zeros(L,1));
+                plot(app.UIAxes_19, xx, zeros(L,1));
                 
             end
             
@@ -410,6 +412,7 @@ bob.arduino_daq_obj = [];
                 
             end
             
+            disp(bob.time(i) - bob.time(1))
         end
         
         

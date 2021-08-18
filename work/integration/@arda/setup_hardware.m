@@ -23,6 +23,11 @@ if ~arda.simulation_only
         for j = 1:length(arda.ni_daq_obj.Channels)
             arda.ni_daq_obj.Channels(j).ThermocoupleType = "K";
         end
+        
+        %% Analog input module
+        arda.ni_daq_obj.addinput("cDAQ1Mod5","ai0","Voltage")
+        
+        %% Analog output module
         arda.ni_daq_obj.addoutput("cDAQ1Mod3","ao1","Voltage");
     end
 end
