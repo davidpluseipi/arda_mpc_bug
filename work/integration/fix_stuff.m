@@ -4,10 +4,10 @@ load('C.mat','C')
 bob = arda();
 
 bob.C = C;
-bob.using_arduino_hardware = false;
+bob.using_arduino_hardware = true;
 bob.using_ni_hardware = true;
 bob.heater = 'ni';
-bob.max_iterations = 600;
+bob.max_iterations = 1200;
 bob.live_plot = true;
 
 k = 3; % number of times setpoint changes
@@ -28,12 +28,12 @@ bob.s = step_up*bob.s;
 tic
 bob = main(bob);
 toc
-T = timetable(bob.time', bob.outputs(:,1), bob.outputs(:,2), ...
-    bob.resistance', bob.voltage', bob.P_h,...
-    'VariableNames',{'T_g','T_h','R','V','P'});
-figure; plot(bob.setpoints,'-r');hold on; plot(bob.outputs(:,1),'.b')
-figure; stackedplot(T);
-save bob.mat bob
-save run_7.mat bob
-disp(bob.C)
+% T = timetable(bob.time', bob.outputs(:,1), bob.outputs(:,2), ...
+%     bob.resistance', bob.voltage', bob.P_h,...
+%     'VariableNames',{'T_g','T_h','R','V','P'});
+% figure; plot(bob.setpoints,'-r');hold on; plot(bob.outputs(:,1),'.b')
+% figure; stackedplot(T);
+% save bob.mat bob
+% save run_9.mat bob
+% disp(bob.C)
 

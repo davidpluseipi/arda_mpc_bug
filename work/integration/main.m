@@ -1,8 +1,13 @@
-function [bob] = main(bob)
+function [bob] = main(bob, options)
 %% MAIN  Run aRDA
 %
 %   [ARDA_OBJ] = MAIN(ARDA_OBJ) runs the aRDA with preselected options.
 %
+%%
+arguments
+    bob
+    options.app 
+end
 
 % Check for conflicts
 if ~bob.using_arduino_hardware && ~bob.using_ni_hardware
@@ -18,19 +23,21 @@ if ~bob.using_arduino_hardware && ~bob.using_ni_hardware
     end
     
 else
+    
     if bob.simulation_only
         bob.simulation_only = false;
         warning(['Input arguments to main.m indicate at least one type ',...
             'of hardware is being used.  The arda object property ',...
             '''simulation_only'' has been set to FALSE.'])
     end
+    
+    if ~ismember(bob.heater, {'arduino', 'ni'})
+        error(['Invalid input argument. arda object property heater has ',...
+            'the following options: ''arduino'', ''ni''']);
+    end
+
 end
 
-
-if ~ismember(bob.heater, {'arduino', 'ni'})
-    error(['Invalid input argument. arda object property heater has ',...
-        'the following options: ''arduino'', ''ni''']);
-end
 
 if bob.parallel && ~bob.using_arduino_hardware && ~bob.using_ni_hardware
     
@@ -44,9 +51,39 @@ end
 % Create the responder object with listeners
 zoe = responder(bob); %#ok<NASGU>
 
-% Create the gauges app
-if bob.live_plot
+% Create the app
+if bob.using_app && ~isempty(options.app)
+    app = options.app;
+else
     app = gauges();
+    app.RunButton.Enable = 'off';
+    app.HeaterDropDown.Value = bob.heater;
+    app.max_iterationsEditField_2.Value = bob.max_iterations;
+    app.LivePlotCheckBox.Value = bob.live_plot;
+    app.SimulationCheckBox.Value = bob.simulation_only;
+    app.UsingArduinoHardwareCheckBox.Value = bob.using_arduino_hardware;
+    app.UsingNIHardwareCheckBox.Value = bob.using_ni_hardware;
+end
+
+plot(app.UIAxes_profile, bob.t(end-1), bob.s, '-r');
+hold(app.UIAxes_profile,'on')
+app.UIAxes_12.XLim = [0 bob.max_iterations];
+app.UIAxes_11.XLim = [0 bob.max_iterations];
+app.UIAxes_10.XLim = [0 bob.max_iterations];
+app.UIAxes_9.XLim = [0 bob.max_iterations];
+app.UIAxes_8.XLim = [0 bob.max_iterations];
+app.UIAxes_7.XLim = [0 bob.max_iterations];
+app.UIAxes_6.XLim = [0 bob.max_iterations];
+app.UIAxes_4.XLim = [0 bob.max_iterations];
+app.UIAxes_15.XLim = [0 bob.max_iterations];
+app.UIAxes_14.XLim = [0 bob.max_iterations];
+app.UIAxes_13.XLim = [0 bob.max_iterations];
+app.UIAxes_16.XLim = [0 bob.max_iterations];
+app.UIAxes_17.XLim = [0 bob.max_iterations];
+app.UIAxes_18.XLim = [0 bob.max_iterations];
+app.UIAxes_19.XLim = [0 bob.max_iterations];
+
+if bob.live_plot
     app.max_iterationsEditField.Value = bob.max_iterations;
 end
 
@@ -65,12 +102,18 @@ if bob.simulation_only
     bob.T_g = bob.T_g + c2k;
     bob.T_h = bob.T_h + c2k;
     
-elseif ~bob.simulation_only && bob.using_ni_hardware
-    
-    daq_data = read(bob.ni_daq_obj);
-    bob.T_g = daq_data.cDAQ1Mod8_ai1 + c2k;
-    bob.T_h = daq_data.cDAQ1Mod8_ai3 + c2k;
-    
+else
+    if bob.using_ni_hardware
+        
+        daq_data = read(bob.ni_daq_obj);
+        bob.T_g = daq_data.cDAQ1Mod8_ai1 + c2k;
+        bob.T_h = daq_data.cDAQ1Mod8_ai3 + c2k;
+        
+    elseif bob.using_arduino_hardware
+        
+        % Data is captured in set_initial_conditions
+        
+    end
 end
 
 % Establish a consistent set of ICs
@@ -185,7 +228,9 @@ bob.arduino_daq_obj = [];
         R_hot = R_cold*1.5; % Ohms (guess)
         bob.slope = (R_cold - R_hot)/(T_cold - T_hot);
         t = 0.02; % sec
-        k = ones(t*bob.ni_daq_obj.Rate, 1); % column vector
+        k = ones(t*100, 1); % column vector
+        
+        
         %% Loop
         for i = 1:bob.max_iterations
             
@@ -255,10 +300,13 @@ bob.arduino_daq_obj = [];
             bob.m_steam(i) = bob.pid_phi.out;
             
             %% Actuator: steam
-            %
-            %
-            
-            
+            if ~bob.simulation_only && bob.using_arduino_hardware
+                if bob.pid_phi.out > 0
+                    writeDigitalPin(bob.arduino_daq_obj, 'D6',1); % light
+                    pause(bob.pid_phi.out)
+                    writeDigitalPin(bob.arduino_daq_obj, 'D6',0); % light
+                end
+            end
             %% Plant Model
             % On the first time through the loop, use the x_0 above,
             % otherwise, use the output of the ode.
@@ -323,9 +371,6 @@ bob.arduino_daq_obj = [];
             if bob.live_plot
                 
             % Update the gauges
-            app.AirCGauge.Value = bob.T_g - c2k;
-            app.HeaterCGauge.Value = bob.T_h - c2k;
-            app.PowerWGauge.Value = bob.P_h(i);
             app.T_gEditField.Value = bob.T_g - c2k;
             app.T_hEditField.Value = bob.T_h - c2k;
             app.T_oEditField.Value = bob.T_o - c2k;
@@ -334,12 +379,13 @@ bob.arduino_daq_obj = [];
             app.p_aEditField.Value = bob.p_a;
             app.V_gEditField.Value = bob.V_g;
             app.phiEditField.Value = bob.phi;
-            app.m_vEditField.Value = bob.m_v;
+            app.m_vEditField.Value = bob.m_v(i);
             app.m_aEditField.Value = bob.m_a;
             app.P_hEditField.Value = bob.P_h(i);
+            app.p_sEditField.Value = bob.p_s;
             app.iEditField.Value = i;
             
-            if strcmp(bob.heater, 'ni')
+            if ~bob.simulation_only && strcmp(bob.heater, 'ni')
                 app.V_hEditField.Value = bob.voltage(i);
             end
             app.m_dotEditField.Value = 0;
@@ -360,7 +406,9 @@ bob.arduino_daq_obj = [];
                 % Use app
                 L = length(bob.outputs(:,1));
                 xx = 1:L;
+                plot(app.UIAxes_profile, xx, bob.outputs(:,1) - c2k, '-b');
                 plot(app.UIAxes_12, xx, bob.outputs(:,1) - c2k); 
+                
                 plot(app.UIAxes_11, xx, bob.outputs(:,2) - c2k); 
                 plot(app.UIAxes_10, xx, bob.outputs(:,3) - c2k); 
                 plot(app.UIAxes_9, xx, bob.outputs(:,4)); 
@@ -372,12 +420,13 @@ bob.arduino_daq_obj = [];
                 plot(app.UIAxes_14, xx, bob.outputs(:,11)); 
                 plot(app.UIAxes_13, xx, bob.outputs(:,12)); 
                 plot(app.UIAxes_16, 1:length(bob.P_h), bob.P_h); 
-                if strcmp(bob.heater, 'ni')
+                if ~bob.simulation_only && strcmp(bob.heater, 'ni')
                     plot(app.UIAxes_17, xx, bob.voltage);
                 end
                 plot(app.UIAxes_18, xx, zeros(L,1));
                 plot(app.UIAxes_19, xx, zeros(L,1));
-                
+               
+                app.ElapsedTimeTextArea.Value = string(bob.time(i) - bob.time(1));
             end
             
             %% Insert errors as necessary
@@ -411,8 +460,8 @@ bob.arduino_daq_obj = [];
                 end
                 
             end
-            
-            disp(bob.time(i) - bob.time(1))
+    
+            pause(1)
         end
         
         

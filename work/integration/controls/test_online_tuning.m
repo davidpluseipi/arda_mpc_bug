@@ -1,9 +1,9 @@
 % function C = test_online_tuning()
+clear; 
+load('run_.mat','bob')
 
-load('run_6.mat','bob')
-
-figure; yyaxis left; plot(bob.outputs(:,1)-273.15); 
-yyaxis right; plot(bob.voltage)
+% figure; yyaxis left; plot(bob.outputs(:,1)-273.15); 
+% yyaxis right; plot(bob.voltage)
 
 
 nx = 5; % order of state space model
@@ -21,13 +21,14 @@ ze.OutputName = {'Temperature'};%,'Relative Humidity'};
 
 
 % Split the data into estimation and validation datasets
-ze1 = ze; %ze(1:floor(length(U)*2/3));
+ze1 = ze(1:floor(length(U)*2/3));
 zv1 = ze(floor(length(U)*2/3 + 1):end);
 
 
 
 
 sys = ssest(ze1, nx);
+figure
 compare(ze1, sys)
 
 G = idtf(sys, 'InputName', 'u', 'OutputName','y');

@@ -93,11 +93,12 @@ classdef arda < matlab.System
         final_plots (1,1) {mustBeNumericOrLogical} = false
         window_style {mustBeMember(window_style,{'normal','docked'})} = 'docked'
         
-        heater {mustBeMember(heater,{'arduino','ni'})} = 'arduino'
+        heater {mustBeMember(heater,{'arduino','ni','none'})} = 'none'
         parallel (1,1) {mustBeNumericOrLogical} = false 
         simulation_only (1,1) {mustBeNumericOrLogical}
         using_ni_hardware (1,1) {mustBeNumericOrLogical} = false 
         using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false 
+        using_app (1,1) {mustBeNumericOrLogical} = false
         
     end
     

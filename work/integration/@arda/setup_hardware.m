@@ -5,8 +5,12 @@ if ~arda.simulation_only
         arda.arduino_daq_obj = arduino('COM4' ,'Uno', 'Libraries',...
             {'Adafruit/DHT22'});
         
-        % Heater
-        configurePin(arda.arduino_daq_obj,'D2','DigitalOutput');
+        if strcmp(arda.heater,'arduino')
+            % Heater
+            configurePin(arda.arduino_daq_obj,'D2','DigitalOutput');
+        end
+        
+        configurePin(arda.arduino_daq_obj,'D6','DigitalOutput'); % light
         
         % Temperature / Humidity
         arda.sensor_dht22 = addon(arda.arduino_daq_obj, 'Adafruit/DHT22',...
