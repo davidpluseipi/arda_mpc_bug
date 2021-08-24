@@ -55,7 +55,7 @@ zoe = responder(bob); %#ok<NASGU>
 if bob.using_app && ~isempty(options.app)
     app = options.app;
 else
-    app = gauges();
+    app = arda_app();
     app.RunButton.Enable = 'off';
     app.HeaterDropDown.Value = bob.heater;
     app.max_iterationsEditField_2.Value = bob.max_iterations;
