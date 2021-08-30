@@ -1,9 +1,9 @@
 function define_temperature_controller(arda)
 
 if arda.simulation_only
-    tau = 2532;                                                                                                                 
-    tau_dead = 10;                                                                                                                                
-    P = (197.1 - 97.1)/97.1; % Percent change of input                                                                           
+    tau = 2532;
+    tau_dead = 10;
+    P = (197.1 - 97.1)/97.1; % Percent change of input
     N = ((25.81 - 22.87)/22.87) / tau; % Percent change of output / tau
     L = tau_dead;
     R = tau_dead / tau;
@@ -16,26 +16,31 @@ if arda.simulation_only
     arda.pid.min_output = 0;
     arda.pid.max_output = 11000;
 else
-    arda.pid.K_p = arda.C.Kp;
-    arda.pid.K_i = arda.C.Ki;
-    arda.pid.K_d = arda.C.Kd;
+    if round(arda.T_g) <= length(arda.controllers)
+        C = arda.controllers{round(arda.T_g)};
+    else
+        C = arda.controllers{end};
+    end
+    arda.pid.K_p = C.Kp;
+    arda.pid.K_i = C.Ki;
+    arda.pid.K_d = C.Kd;
     arda.pid.tau = 1;
     arda.pid.min_output = 0;
-    arda.pid.max_output = 5/6;
+    arda.pid.max_output = 0.5;
     
-%     arda.pid.K_p = 0.0179;
-%     arda.pid.K_i = 1.37e-6;
-%     arda.pid.K_d = 0;
-%     arda.pid.tau = 1;
-%     arda.pid.min_output = 0;
-%     arda.pid.max_output = 5/6;
+    %     arda.pid.K_p = 0.0179;
+    %     arda.pid.K_i = 1.37e-6;
+    %     arda.pid.K_d = 0;
+    %     arda.pid.tau = 1;
+    %     arda.pid.min_output = 0;
+    %     arda.pid.max_output = 5/6;
     
-%     arda.pid.K_p = 63.7;
-%     arda.pid.K_i = 3.51;
-%     arda.pid.K_d = 0;
-%     arda.pid.tau = 1;
-%     arda.pid.min_output = 0;
-%     arda.pid.max_output = 5/6;
+    %     arda.pid.K_p = 63.7;
+    %     arda.pid.K_i = 3.51;
+    %     arda.pid.K_d = 0;
+    %     arda.pid.tau = 1;
+    %     arda.pid.min_output = 0;
+    %     arda.pid.max_output = 5/6;
 end
 
 end

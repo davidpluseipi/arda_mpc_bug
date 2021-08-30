@@ -23,6 +23,7 @@ classdef arda < matlab.System
         time {isdatetime}
         V2
         slope
+        controllers
     end
     
     properties (SetObservable = true)
@@ -62,7 +63,7 @@ classdef arda < matlab.System
     properties % gas mixture and simulation
         x_0 (12,1) {mustBeNumeric} = zeros(12,1)
         m_a (1,1) {mustBeNumeric}
-        m_v (1,1) {mustBeNumeric} = 0
+        m_v (1,1) {mustBeNumeric}
         p_a (1,1) {mustBeNumeric}
         p_g (1,1) {mustBeNumeric}
         p_s (1,1) {mustBeNumeric}
@@ -86,7 +87,7 @@ classdef arda < matlab.System
             'T_h', 20);
         step_size (1,1) {mustBeNumeric} = 1
         max_iterations (1,1) {mustBeNumeric} = 30 
-        temperature_setpoint (1,1) {mustBeNumeric} = 20
+        temperature_setpoint (1,1) {mustBeNumeric} = 25
         relative_humidity_setpoint (1,1) {mustBeNumeric} = 0.5
         progress_bar (1,1) {mustBeNumericOrLogical} = false
         live_plot (1,1) {mustBeNumericOrLogical} = false
@@ -101,6 +102,29 @@ classdef arda < matlab.System
         using_app (1,1) {mustBeNumericOrLogical} = false
         
     end
+    
+    
+    properties % relative humidity sensors
+        using_relative_humidity_sensor (1,1) {mustBeNumericOrLogical} = false
+        vaisala1_output1_conversion_factor (1,1) {mustBeNumeric} = 10;
+    end
+    
+    
+    properties % LIDAR
+        pipe
+        points
+        point_cloud
+        profile
+        frame_set
+        depth
+        color
+        vertices
+        X
+        Y
+        Z
+        using_lidar (1,1) {mustBeNumericOrLogical} = false
+    end
+    
     
     properties % failures
         fail_overtemp (1,1) {mustBeNumericOrLogical} = false

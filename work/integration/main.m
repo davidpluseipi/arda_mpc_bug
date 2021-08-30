@@ -6,10 +6,22 @@ function [bob] = main(bob, options)
 %%
 arguments
     bob
-    options.app 
+    options.app
 end
 
+import realsense.*  % for LIDAR L515 (import lines need to be first
+
 % Check for conflicts
+
+if bob.using_relative_humidity_sensor && ~bob.using_ni_hardware
+    
+    bob.using_ni_hardware = true;
+    warning(['Input arguments to main.m indicate ',...
+        'using_relative_humidity_sensor is TRUE. The arda object property ',...
+        '''using_ni_hardware'' has been set to TRUE.']);
+    
+end
+
 if ~bob.using_arduino_hardware && ~bob.using_ni_hardware
     
     if ~bob.simulation_only
@@ -31,11 +43,8 @@ else
             '''simulation_only'' has been set to FALSE.'])
     end
     
-    if ~ismember(bob.heater, {'arduino', 'ni'})
-        error(['Invalid input argument. arda object property heater has ',...
-            'the following options: ''arduino'', ''ni''']);
-    end
 
+    
 end
 
 
@@ -56,7 +65,10 @@ if bob.using_app && ~isempty(options.app)
     app = options.app;
 else
     app = arda_app();
-    app.RunButton.Enable = 'off';
+    app.RunButton.Enable = "off";
+    app.CreateNewButton.Enable = "off";
+    app.LoadExistingButton.Enable = "off";
+    app.EditCurrentButton.Enable = "off";
     app.HeaterDropDown.Value = bob.heater;
     app.max_iterationsEditField_2.Value = bob.max_iterations;
     app.LivePlotCheckBox.Value = bob.live_plot;
@@ -66,7 +78,15 @@ else
 end
 
 plot(app.UIAxes_profile, bob.t(end-1), bob.s, '-r');
+app.UIAxes_profile.XLim = [0 bob.max_iterations];
+
+app.UIAxes_profile.YLim = [20 40];
 hold(app.UIAxes_profile,'on')
+for ii = 1:length(bob.t)
+    plot(app.UIAxes_profile, bob.t(ii) * ones(length(app.UIAxes_profile.YLim),1),...
+        app.UIAxes_profile.YLim);
+end
+
 app.UIAxes_12.XLim = [0 bob.max_iterations];
 app.UIAxes_11.XLim = [0 bob.max_iterations];
 app.UIAxes_10.XLim = [0 bob.max_iterations];
@@ -139,9 +159,9 @@ end
 
 
 % Notify listeners of events. She then runs the code for those states.
-notify(bob, 'prestartup')
-notify(bob, 'startup')
-notify(bob, 'selftest')
+notify(bob, "prestartup")
+notify(bob, "startup")
+notify(bob, "selftest")
 
 % If there have been any red alerts or yellow alerts, take action
 check4errors(bob);
@@ -164,22 +184,30 @@ end
 
 % Close the progress bar
 if bob.progress_bar
-    
     close(bob.dialog_box)
-    close(bob.fig)
-    
+    close(bob.fig) 
 end
 
 % Set the default figure window style back to normal
-set(0,'DefaultFigureWindowStyle','normal')
+set(0,"DefaultFigureWindowStyle","normal")
 
-% Delete stuff
-bob.arduino_daq_obj = [];
-%delete(app)
+% Delete / Stop stuff
+bob.arduino_daq_obj = []; % Remove before saving. Not saved anyway.
+if ~isempty(bob.pipe)
+    try
+        pipe = bob.pipe;
+        pipe.stop();
+    catch er
+        warning(er.message)
+    end
+end
 
+app.RunButton.Enable = "on";
+app.CreateNewButton.Enable = "on";
+app.LoadExistingButton.Enable = "on";
+app.EditCurrentButton.Enable = "on";
 
-
-
+delete(app) % Save this for later
 
 %% Main loop
     function B1 = main_loop()
@@ -196,14 +224,14 @@ bob.arduino_daq_obj = [];
         end
         
         %% Create a figure and store its axes handle
-%         if bob.live_plot
-%             figure
-%             ax = gca;
-%         end
+        %         if bob.live_plot
+        %             figure
+        %             ax = gca;
+        %         end
         
         %% Establish setpoints
-        bob.temperature_setpoint = bob.T_g;
-        bob.s = bob.s + bob.temperature_setpoint;
+        % bob.temperature_setpoint = bob.T_g;
+        bob.s = bob.s + bob.temperature_setpoint + c2k;
         
         bob.setpoints = zeros(length(bob.max_iterations),1);
         for i = 1:bob.max_iterations
@@ -220,6 +248,7 @@ bob.arduino_daq_obj = [];
             end
             
         end
+        
         bob.setpoints = [bob.setpoints bob.setpoints(end)];
         
         T_cold = 20; % C
@@ -238,12 +267,13 @@ bob.arduino_daq_obj = [];
             if bob.parallel
                 
                 % When needed, tune a new controller on a separate worker
-                if ~exist('F','var')
+                if ~exist("F","var")
                     
                     % Call function on separate worker
-                    warning('off','MATLAB:hwsdk:general:nosave')
+                    warning("off","MATLAB:hwsdk:general:nosave")
                     F2 = parfeval(@bob.tune_new_controller, 1);
-                    warning('on','MATLAB:hwsdk:general:nosave')
+                    warning("on","MATLAB:hwsdk:general:nosave")
+                    
                 else
                     
                     % If F2 has its returned output arguments, fetch them
@@ -259,36 +289,48 @@ bob.arduino_daq_obj = [];
             end
             
             %% Controller
+            if round(bob.T_g) <= length(bob.controllers)
+                C = bob.controllers{round(bob.T_g)};
+            else
+                C = bob.controllers{end};
+            end
+            bob.pid.K_p = C.Kp;
+            bob.pid.K_i = C.Ki;
+            bob.pid.K_d = C.Kd;
+                        
             % Calculate output for temperature controller
-            %bob.temperature_setpoint = bob.setpoints(i);
             bob.pid.calculate_controller_output(bob.setpoints(i), bob.T_g);
+            if i < 10
+                bob.pid.out = 0;
+            end
             bob.P_h(i) = bob.pid.out;
             
             %% Actuator
-            % When using the Arduino, the heater can be on or off
+            % When using the Arduino, the heater can only be on or off
             if ~bob.simulation_only
                 
                 % If the heater is connected to the arduino
-                if strcmp(bob.heater, 'arduino')
+                if strcmp(bob.heater, "arduino")
                     
                     % Any commanded output turns the heater full on,
                     % otherwise, turn it off
                     if bob.pid.out > 0
                         
-                        writeDigitalPin(bob.arduino_daq_obj,'D2',1);  % ON
+                        writeDigitalPin(bob.arduino_daq_obj,"D2",1);  % ON
                         
                     else
                         
-                        writeDigitalPin(bob.arduino_daq_obj,'D2',0);  % OFF
+                        writeDigitalPin(bob.arduino_daq_obj,"D2",0);  % OFF
                         
                     end
                     pause(1) % Don't burn out the Arduino relay
                     
-                elseif strcmp(bob.heater, 'ni') % If heater is connected to
-                    bob.resistance(i) = bob.slope * (bob.T_h-c2k) + R_cold;
-                    bob.voltage(i) = sqrt(bob.resistance(i)*bob.pid.out); % NI9263 outputs 0-10V
+                elseif strcmp(bob.heater, "ni") % If heater is connected to
                     
-                    A = k*min(bob.voltage(i), 10); % A must be MxN where N is number of channels
+                    bob.resistance(i) = bob.slope * (bob.T_h-c2k) + R_cold;
+                    bob.voltage(i) = min(sqrt(bob.resistance(i)*bob.pid.out),...
+                        10); % NI9263 outputs 0-10V
+                    A = k*bob.voltage(i); % A must be MxN where N is number of channels
                     data = readwrite(bob.ni_daq_obj, A);
                 end
             end
@@ -301,17 +343,23 @@ bob.arduino_daq_obj = [];
             
             %% Actuator: steam
             if ~bob.simulation_only && bob.using_arduino_hardware
+                
                 if bob.pid_phi.out > 0
-                    writeDigitalPin(bob.arduino_daq_obj, 'D6',1); % light
+                    
+                    writeDigitalPin(bob.arduino_daq_obj, "D6",1); % light
                     pause(bob.pid_phi.out)
-                    writeDigitalPin(bob.arduino_daq_obj, 'D6',0); % light
+                    writeDigitalPin(bob.arduino_daq_obj, "D6",0); % light
+                
                 end
+                
             end
             %% Plant Model
             % On the first time through the loop, use the x_0 above,
             % otherwise, use the output of the ode.
             if i >= 2
+                
                 bob.x_0 = y(end,:);
+                
             end
             
             % Call ode solver
@@ -339,25 +387,64 @@ bob.arduino_daq_obj = [];
                         end
                         
                     else
-                        % If not operating on a parpool, acquire the data
-                        % locally.
-                        %daq_data = read(bob.ni_daq_obj, 1);
-                        y(end,1) = data.cDAQ1Mod8_ai1(1) + c2k; % T_g
-                        y(end,2) = data.cDAQ1Mod8_ai3(1) + c2k; % T_h
-                        bob.V2(i) = data.cDAQ1Mod5_ai0(1);
+                        if strcmp(bob.heater,"ni")
+                            
+                            % If not using parpool, acquire data locally.
+                            y(end,1) = data.cDAQ1Mod8_ai1(1) + c2k; % T_g
+                            y(end,2) = data.cDAQ1Mod8_ai3(1) + c2k; % T_h
+                            bob.V2(i) = data.cDAQ1Mod5_ai0(1);
+                            
+                        end
+                  
+                        
+                        if bob.using_relative_humidity_sensor
+                            
+                           % data2 = read(bob.ni_daq_obj);                           
+                           y(end,9) = data.cDAQ1Mod5_ai1(1) *...
+                               bob.vaisala1_output1_conversion_factor;
+                           
+                        end
                     end
                 end
                 
                 
                 if bob.using_arduino_hardware
-                    % Read humidity values from the arduino hardware
-                    y(end,9) = readHumidity(bob.sensor_dht22);
+                    if ~bob.using_relative_humidity_sensor
+                        % Read humidity values from the arduino hardware
+                        y(end,9) = readHumidity(bob.sensor_dht22);
+                    end
+                end
+                
+                
+                
+                
+            end
+            if bob.using_lidar
+                % Obtain frames from streaming device
+                bob.frame_set = bob.pipe.wait_for_frames();
+                
+                % Select depth frame
+                bob.depth = bob.frame_set.get_depth_frame();
+                % bob.color = bob.frames.get_color_frame();
+                
+                % Produce point cloud
+                if bob.depth.logical() % && bob.color.logical()
                     
+                    % bob.point_cloud.map_to(bob.color);
+                    bob.points = bob.point_cloud.calculate(bob.depth);
+                    
+                    % Adjust frame coord. system to MATLAB coord sys
+                    bob.vertices = bob.points.get_vertices();
+                    bob.X = bob.vertices(:,1,1);
+                    bob.Y = bob.vertices(:,2,1);
+                    bob.Z = bob.vertices(:,3,1);
+                    fprintf("mean(Z): %.3f\n", mean(bob.Z))
+                    fprintf("max(Z): %.3\n", max(bob.Z))
                 end
             end
             
             % Manage output data
-            bob.time(i) = datetime('now');
+            bob.time(i) = datetime("now");
             bob.outputs(i,:) = y(end,:);
             bob.T_g = bob.outputs(i,1); %disp(bob.T_g)
             bob.T_h = bob.outputs(i,2); %disp(bob.T_h)
@@ -366,32 +453,36 @@ bob.arduino_daq_obj = [];
             bob.p_v = bob.outputs(i,5);
             bob.p_a = bob.outputs(i,6);
             bob.p_s = bob.outputs(i,10);
+            bob.m_v = bob.outputs(i,11);
             
             % If user has opted for a live plot of the date during the run
             if bob.live_plot
                 
-            % Update the gauges
-            app.T_gEditField.Value = bob.T_g - c2k;
-            app.T_hEditField.Value = bob.T_h - c2k;
-            app.T_oEditField.Value = bob.T_o - c2k;
-            app.p_gEditField.Value = bob.p_g;
-            app.p_vEditField.Value = bob.p_v;
-            app.p_aEditField.Value = bob.p_a;
-            app.V_gEditField.Value = bob.V_g;
-            app.phiEditField.Value = bob.phi;
-            app.m_vEditField.Value = bob.m_v(i);
-            app.m_aEditField.Value = bob.m_a;
-            app.P_hEditField.Value = bob.P_h(i);
-            app.p_sEditField.Value = bob.p_s;
-            app.iEditField.Value = i;
-            
-            if ~bob.simulation_only && strcmp(bob.heater, 'ni')
-                app.V_hEditField.Value = bob.voltage(i);
-            end
-            app.m_dotEditField.Value = 0;
-            app.vEditField.Value = 0;
-            
-            
+                % Update the gauges
+                app.T_gEditField.Value = bob.T_g - c2k;
+                app.T_hEditField.Value = bob.T_h - c2k;
+                app.T_oEditField.Value = bob.T_o - c2k;
+                app.p_gEditField.Value = bob.p_g;
+                app.p_vEditField.Value = bob.p_v;
+                app.p_aEditField.Value = bob.p_a;
+                app.V_gEditField.Value = bob.V_g;
+                app.phiEditField.Value = bob.phi;
+                app.m_vEditField.Value = bob.m_v;
+                app.m_aEditField.Value = bob.m_a;
+                app.P_hEditField.Value = bob.P_h(i);
+                app.p_sEditField.Value = bob.p_s;
+                app.iEditField.Value = i;
+                
+                if ~bob.simulation_only && strcmp(bob.heater, 'ni')
+                    app.V_hEditField.Value = bob.voltage(i);
+                end
+                app.m_dotEditField.Value = 0;
+                app.vEditField.Value = 0;
+                
+                if bob.using_lidar
+                    app.DistanceLIDARtomaterialmEditField.Value = min(bob.Z);
+                end
+                
                 
                 % Simple plot
                 %                 yy = bob.outputs(:,1) - c2k;
@@ -407,26 +498,39 @@ bob.arduino_daq_obj = [];
                 L = length(bob.outputs(:,1));
                 xx = 1:L;
                 plot(app.UIAxes_profile, xx, bob.outputs(:,1) - c2k, '-b');
-                plot(app.UIAxes_12, xx, bob.outputs(:,1) - c2k); 
+                plot(app.UIAxes_12, xx, bob.outputs(:,1) - c2k);
                 
-                plot(app.UIAxes_11, xx, bob.outputs(:,2) - c2k); 
-                plot(app.UIAxes_10, xx, bob.outputs(:,3) - c2k); 
-                plot(app.UIAxes_9, xx, bob.outputs(:,4)); 
-                plot(app.UIAxes_8, xx, bob.outputs(:,5)); 
-                plot(app.UIAxes_7, xx, bob.outputs(:,6)); 
-                plot(app.UIAxes_6, xx, bob.outputs(:,7)); 
-                plot(app.UIAxes_4, xx, bob.outputs(:,9)); 
-                plot(app.UIAxes_15, xx, bob.outputs(:,10)); 
-                plot(app.UIAxes_14, xx, bob.outputs(:,11)); 
-                plot(app.UIAxes_13, xx, bob.outputs(:,12)); 
-                plot(app.UIAxes_16, 1:length(bob.P_h), bob.P_h); 
+                plot(app.UIAxes_11, xx, bob.outputs(:,2) - c2k);
+                plot(app.UIAxes_10, xx, bob.outputs(:,3) - c2k);
+                plot(app.UIAxes_9, xx, bob.outputs(:,4));
+                plot(app.UIAxes_8, xx, bob.outputs(:,5));
+                plot(app.UIAxes_7, xx, bob.outputs(:,6));
+                plot(app.UIAxes_6, xx, bob.outputs(:,7));
+                plot(app.UIAxes_4, xx, bob.outputs(:,9));
+                plot(app.UIAxes_15, xx, bob.outputs(:,10));
+                plot(app.UIAxes_14, xx, bob.outputs(:,11));
+                plot(app.UIAxes_13, xx, bob.outputs(:,12));
+                plot(app.UIAxes_16, 1:length(bob.P_h), bob.P_h);
                 if ~bob.simulation_only && strcmp(bob.heater, 'ni')
                     plot(app.UIAxes_17, xx, bob.voltage);
                 end
                 plot(app.UIAxes_18, xx, zeros(L,1));
                 plot(app.UIAxes_19, xx, zeros(L,1));
-               
+                
                 app.ElapsedTimeTextArea.Value = string(bob.time(i) - bob.time(1));
+                
+                if bob.using_lidar
+                    bob.Z(abs(bob.Z) > abs(max(bob.Z)) - 0.01) = NaN;
+                    
+                    plot3(app.UIAxes_lidar, bob.X, bob.Y, -1*bob.Z, '.')
+                    view(app.UIAxes_lidar, [0 0]) % [azimuth, elevation]
+                    xlim(app.UIAxes_lidar, [-0.5 0.5])
+                    ylim(app.UIAxes_lidar, [-0.5 0.5])
+                    zlim(app.UIAxes_lidar, [-max(bob.Z)-0.05 -max(bob.Z)]+0.05)
+                    xlabel(app.UIAxes_lidar, 'X')
+                    ylabel(app.UIAxes_lidar, 'Y')
+                    zlabel(app.UIAxes_lidar, 'Z')
+                end
             end
             
             %% Insert errors as necessary
@@ -460,7 +564,7 @@ bob.arduino_daq_obj = [];
                 end
                 
             end
-    
+            
             pause(1)
         end
         
