@@ -1,22 +1,24 @@
 % function C = test_online_tuning()
 
 clear; close all; clc
-step_up = 1;
-range = 21:27;
-controllers = cell(max(range),1);
-for i = range
-    clearvars -except controllers step_up range i
-    fprintf('Processing %i\n', i)
-    str = ['bob_' num2str(i) '_step_' num2str(step_up)];
-    load([str '.mat'],'bob')
-    controllers{i} = tune_it(bob);
-end
+% step_up = 1;
+% range = 21:27;
+% controllers = cell(max(range),1);
+% for i = range
+%     clearvars -except controllers step_up range i
+%     fprintf('Processing %i\n', i)
+%     str = ['bob_' num2str(i) '_step_' num2str(step_up)];
+%     load([str '.mat'],'bob')
+%     controllers{i} = tune_it(bob);
+% end
+% 
+% for i = 1:min(range)-1
+%     controllers{i} = controllers{min(range)};
+% end
+load('bob_21_step_1.mat')
+[C, info, sys] = tune_it(bob) % in info, stable 1 is closed loops stable, 0 otherwise
 
-for i = 1:min(range)-1
-    controllers{i} = controllers{min(range)};
-end
-
-function [C] = tune_it(bob)
+function [C, info, sys] = tune_it(bob)
 nx = 5; % order of state space model
 n = nx + 1;
 Y =  bob.outputs(:,1);%[zeros(n,1); bob.outputs(:,9)] ];
@@ -106,7 +108,7 @@ options = pidtuneOptions(...
 % 'balanced'
 % 'reference-tracking'
 % 'disturbance-rejection'
-[C, info] = pidtune(sys, 'PID', bandwidth, options);
+[C, info] = pidtune(sys, 'PID2', bandwidth, options);
 % pidTuner(sys,'PID')
 
 

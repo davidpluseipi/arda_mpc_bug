@@ -111,6 +111,7 @@ end
 set(0,'DefaultFigureWindowStyle', bob.window_style)
 
 % Run the arda 'startup' methods
+bob.setup_sensors();
 bob.setup_hardware();
 bob.progress_dialog();
 bob.define_constants();

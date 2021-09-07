@@ -8,6 +8,10 @@ classdef controller_pid < handle
         K_i {mustBeNumeric} = 0
         K_d {mustBeNumeric} = 0
         
+        % 2DOF factors
+        b {mustBeNumeric} = 1
+        c {mustBeNumeric} = 1
+        
         % Derivative low-pass filter time constant
         tau {mustBeNumeric} = 0
         

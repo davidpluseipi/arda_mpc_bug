@@ -104,7 +104,10 @@ classdef arda < matlab.System
     end
     
     
-    properties % relative humidity sensors
+    properties % sensors
+        temperature_sensor_1 (1,1) {isobject}
+        temperature_sensor_2 (1,1) {isobject}
+        relative_humidity_sensor_1 (1,1) {isobject}
         using_relative_humidity_sensor (1,1) {mustBeNumericOrLogical} = false
         vaisala1_output1_conversion_factor (1,1) {mustBeNumeric} = 10;
     end
@@ -167,6 +170,8 @@ classdef arda < matlab.System
         check4errors(arda)
         arda = tune_new_controller(arda)
         log_error(arda, er)
+        setup_hardware(arda)
+        setup_sensors(arda)
     end
     
 end
