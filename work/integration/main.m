@@ -11,8 +11,21 @@ end
 
 import realsense.*  % for LIDAR L515 (import lines need to be first
 
-% Check for conflicts
+%% Create datastore folder
+d = dir(bob.datastore_folder);
+serials = zeros(length(d)-2,1);
 
+for idx = 3:length(d)-2
+    serials(idx) = str2double(d(idx).name(end-4:end));
+end
+
+str1 = datestr( datetime('now'), 'YYYY.MM.DD-HH-mm-ss - ');
+str2 = pad_zeros( max(serials) + 1, 5);
+folder2save2 = fullfile(bob.datastore_folder, [str1 str2]);
+mkdir(folder2save2)
+
+
+% Check for conflicts
 if bob.using_relative_humidity_sensor && ~bob.using_ni_hardware
     
     bob.using_ni_hardware = true;
@@ -203,10 +216,12 @@ if ~isempty(bob.pipe)
     end
 end
 
-app.RunButton.Enable = "on";
-app.CreateNewButton.Enable = "on";
-app.LoadExistingButton.Enable = "on";
-app.EditCurrentButton.Enable = "on";
+if exist('app','var')
+    app.RunButton.Enable = "on";
+    app.CreateNewButton.Enable = "on";
+    app.LoadExistingButton.Enable = "on";
+    app.EditCurrentButton.Enable = "on";
+end
 
 delete(app) % Save this for later
 
@@ -260,9 +275,24 @@ delete(app) % Save this for later
         t = 0.02; % sec
         k = ones(t*100, 1); % column vector
         
+        %% Preallocation
+%         row_times = NaT(bob.max_iterations,1);
+%         a = zeros(bob.max_iterations, 1);
+%         TT = timetable(row_times,a,a,a,a,a,...
+%             a,a,a,a,a,...
+%             a,a,a,a,a,...
+%             a,a,a,...
+%             'VariableNames',...
+%             {'T_g' 'T_h' 'T_o' 'p_g' 'p_v'...
+%             'p_a' 'V_g' 'q' 'phi' 'p_s'...
+%             'm_v' 'm_a' 'pid_out' 'P_h' 'pid_phi_out'...
+%             'm_steam' 'pid_v_blower' 'v_airflow'});
+        
         
         %% Loop
         for i = 1:bob.max_iterations
+            
+            t_start = tic;
             
             %% Tune new controller
             if bob.parallel
@@ -332,6 +362,7 @@ delete(app) % Save this for later
                     bob.voltage(i) = min(sqrt(bob.resistance(i)*bob.pid.out),...
                         10); % NI9263 outputs 0-10V
                     A = k*bob.voltage(i); % A must be MxN where N is number of channels
+                    bob.time(i) = datetime('now');
                     data = readwrite(bob.ni_daq_obj, A);
                 end
             end
@@ -445,7 +476,9 @@ delete(app) % Save this for later
             end
             
             % Manage output data
-            bob.time(i) = datetime("now");
+            if ~strcmp(bob.heater,"ni")
+                bob.time(i) = datetime('now');
+            end
             bob.outputs(i,:) = y(end,:);
             bob.T_g = bob.outputs(i,1); %disp(bob.T_g)
             bob.T_h = bob.outputs(i,2); %disp(bob.T_h)
@@ -495,28 +528,120 @@ delete(app) % Save this for later
                 %                     floor(min(bob.outputs(:,1)) - 0.5 - c2k)...
                 %                     ceil(max(bob.outputs(:,1)) + 0.5 - c2k)])
                 
-                % Use app
+                %
                 L = length(bob.outputs(:,1));
                 xx = 1:L;
-                plot(app.UIAxes_profile, xx, bob.outputs(:,1) - c2k, '-b');
-                plot(app.UIAxes_12, xx, bob.outputs(:,1) - c2k);
+                yy_profile = bob.outputs(:,1) - c2k;
+                yy_12 = yy_profile;
+                yy_11 = bob.outputs(:,2) - c2k;
+                yy_10 = bob.outputs(:,3) - c2k;
+                yy_9 = bob.outputs(:,4);
+                yy_8 = bob.outputs(:,5);
+                yy_7 = bob.outputs(:,6);
+                yy_6 = bob.outputs(:,7);
+                yy_4 = bob.outputs(:,9);
+                yy_15 = bob.outputs(:,10);
+                yy_14 = bob.outputs(:,11);
+                yy_13 = bob.outputs(:,12);
+                xx_16 = 1:length(bob.P_h);
+                yy_16 = bob.P_h;
+                yy_17 = bob.voltage;
+                yy_18 = zeros(L,1);
+                yy_19 = zeros(L,1);
                 
-                plot(app.UIAxes_11, xx, bob.outputs(:,2) - c2k);
-                plot(app.UIAxes_10, xx, bob.outputs(:,3) - c2k);
-                plot(app.UIAxes_9, xx, bob.outputs(:,4));
-                plot(app.UIAxes_8, xx, bob.outputs(:,5));
-                plot(app.UIAxes_7, xx, bob.outputs(:,6));
-                plot(app.UIAxes_6, xx, bob.outputs(:,7));
-                plot(app.UIAxes_4, xx, bob.outputs(:,9));
-                plot(app.UIAxes_15, xx, bob.outputs(:,10));
-                plot(app.UIAxes_14, xx, bob.outputs(:,11));
-                plot(app.UIAxes_13, xx, bob.outputs(:,12));
-                plot(app.UIAxes_16, 1:length(bob.P_h), bob.P_h);
-                if ~bob.simulation_only && strcmp(bob.heater, 'ni')
-                    plot(app.UIAxes_17, xx, bob.voltage);
+                
+                
+                if i == 1
+
+                    line_profile = plot(app.UIAxes_profile, xx, yy_profile, '-b');
+                    line_profile.XDataSource = 'xx';
+                    line_profile.YDataSource = 'yy_profile';
+                    
+                    line_12 = plot(app.UIAxes_12, xx, yy_12);
+                    line_12.XDataSource = 'xx';
+                    line_12.YDataSource = 'yy_12';
+                    
+                    line_11 = plot(app.UIAxes_11, xx, yy_11);
+                    line_11.XDataSource = 'xx';
+                    line_11.YDataSource = 'yy_11';
+                    
+                    line_10 = plot(app.UIAxes_10, xx, yy_10);
+                    line_10.XDataSource = 'xx';
+                    line_10.YDataSource = 'yy_10';
+                    
+                    line_9 = plot(app.UIAxes_9, xx, yy_9);
+                    line_9.XDataSource = 'xx';
+                    line_9.YDataSource = 'yy_9';
+                    
+                    line_8 = plot(app.UIAxes_8, xx, yy_8);
+                    line_8.XDataSource = 'xx';
+                    line_8.YDataSource = 'yy_8';
+                    
+                    line_7 = plot(app.UIAxes_7, xx, yy_7);
+                    line_7.XDataSource = 'xx';
+                    line_7.YDataSource = 'yy_7';
+                    
+                    line_6 = plot(app.UIAxes_6, xx, yy_6);
+                    line_6.XDataSource = 'xx';
+                    line_6.YDataSource = 'yy_6';
+                    
+                    line_4 = plot(app.UIAxes_4, xx, yy_4);
+                    line_4.XDataSource = 'xx';
+                    line_4.YDataSource = 'yy_4';
+                    
+                    line_15 = plot(app.UIAxes_15, xx, yy_15);
+                    line_15.XDataSource = 'xx';
+                    line_15.YDataSource = 'yy_15';
+                    
+                    line_14 = plot(app.UIAxes_14, xx, yy_14);
+                    line_14.XDataSource = 'xx';
+                    line_14.YDataSource = 'yy_14';
+                    
+                    line_13 = plot(app.UIAxes_13, xx, yy_13);
+                    line_13.XDataSource = 'xx';
+                    line_13.YDataSource = 'yy_13';
+                    
+                    line_16 = plot(app.UIAxes_16, xx_16, yy_16);
+                    line_16.XDataSource = 'xx_16';
+                    line_16.YDataSource = 'yy_16';
+                    
+                    if ~bob.simulation_only && strcmp(bob.heater, 'ni')
+                        line_17 = plot(app.UIAxes_17, xx, yy_17);
+                        line_17.XDataSource = 'xx';
+                        line_17.YDataSource = 'yy_17';
+                    end
+                    
+                    line_18 = plot(app.UIAxes_18, xx, yy_18);
+                    line_18.XDataSource = 'xx';
+                    line_18.YDataSource = 'yy_18';
+                    
+                    line_19 = plot(app.UIAxes_19, xx, yy_19);
+                    line_19.XDataSource = 'xx';
+                    line_19.YDataSource = 'yy_19';
+                    
+                else
+                    
+                    refreshdata(app.UIAxes_profile,'caller')
+                    
+                    refreshdata(app.UIAxes_12,'caller')
+                    
+                    refreshdata(app.UIAxes_11,'caller')
+                    refreshdata(app.UIAxes_10,'caller')
+                    refreshdata(app.UIAxes_9,'caller')
+                    refreshdata(app.UIAxes_8,'caller')
+                    refreshdata(app.UIAxes_7, 'caller')
+                    refreshdata(app.UIAxes_6, 'caller')
+                    refreshdata(app.UIAxes_4, 'caller')
+                    refreshdata(app.UIAxes_15, 'caller')
+                    refreshdata(app.UIAxes_14, 'caller')
+                    refreshdata(app.UIAxes_13, 'caller')
+                    refreshdata(app.UIAxes_16, 'caller')
+                    if ~bob.simulation_only && strcmp(bob.heater, 'ni')
+                        refreshdata(app.UIAxes_17, 'caller')
+                    end
+                    refreshdata(app.UIAxes_18, 'caller')
+                    refreshdata(app.UIAxes_19, 'caller')
                 end
-                plot(app.UIAxes_18, xx, zeros(L,1));
-                plot(app.UIAxes_19, xx, zeros(L,1));
                 
                 app.ElapsedTimeTextArea.Value = string(bob.time(i) - bob.time(1));
                 
@@ -566,7 +691,10 @@ delete(app) % Save this for later
                 
             end
             
-            pause(1)
+            %% Continuously save everything
+            bob.loop_time(i) = toc(t_start);
+            bob.history{i} = bob;
+            save([fullfile(folder2save2,'bob') '.mat'], 'bob')
         end
         
         
@@ -590,5 +718,4 @@ end
 obj.T_g = obj.T_g + delta;
 
 end
-
 

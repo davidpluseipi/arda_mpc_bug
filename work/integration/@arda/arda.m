@@ -1,7 +1,6 @@
 classdef arda < matlab.System
     
     properties % constants
-        constants (1,4) {isvector}
         R_a (1,1) {mustBeNumeric}
         R_v (1,1) {mustBeNumeric}
         R_go (1,1) {mustBeNumeric}
@@ -24,6 +23,7 @@ classdef arda < matlab.System
         V2
         slope
         controllers
+        
     end
     
     properties (SetObservable = true)
@@ -49,7 +49,7 @@ classdef arda < matlab.System
         red_alert (1,1) {mustBeNumericOrLogical} = false
         yellow_alert (1,1) {mustBeNumericOrLogical} = false
         idx (1,1) {mustBeNumeric} = 1
-        
+        save_to_datastore (1,1) {mustBeNumericOrLogical} = false
         pool
         fig
         dialog_box
@@ -78,6 +78,9 @@ classdef arda < matlab.System
         outputs
         P_h
         m_steam
+        loop_time {isvector}
+        history {iscell}
+        
     end
     
     properties % settings
@@ -100,7 +103,7 @@ classdef arda < matlab.System
         using_ni_hardware (1,1) {mustBeNumericOrLogical} = false 
         using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false 
         using_app (1,1) {mustBeNumericOrLogical} = false
-        
+        datastore_folder (1,:) {ischar} = fullfile('C:','ARDA','ARDA Raw Output','Results')
     end
     
     
@@ -157,9 +160,11 @@ classdef arda < matlab.System
             obj.m_steam = zeros(obj.max_iterations, 1);
             obj.P_h = zeros(obj.max_iterations, 1);
             obj.draw_times = 1:2:obj.max_iterations;
-            obj.resistance = zeros(length(obj.max_iterations),1);
-            obj.time = NaT(length(obj.max_iterations),1);
-
+            obj.resistance = zeros(obj.max_iterations,1);
+            obj.time = NaT(obj.max_iterations,1);
+            obj.loop_time = NaN(obj.max_iterations,1);
+            obj.history = cell(obj.max_iterations,1);
+            
             if size(properties,2) >= 1
                 for i = 1:size(properties,1)
                     obj.(properties{i,1}) = properties{i,2};
