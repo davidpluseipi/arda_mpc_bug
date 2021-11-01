@@ -1,26 +1,33 @@
-% function C = test_online_tuning()
-
 clear; close all; clc
-% step_up = 1;
-% range = 21:27;
-% controllers = cell(max(range),1);
-% for i = range
-%     clearvars -except controllers step_up range i
-%     fprintf('Processing %i\n', i)
-%     str = ['bob_' num2str(i) '_step_' num2str(step_up)];
-%     load([str '.mat'],'bob')
-%     controllers{i} = tune_it(bob);
-% end
-% 
-% for i = 1:min(range)-1
-%     controllers{i} = controllers{min(range)};
-% end
-load('bob_21_step_1.mat')
-[C, info, sys] = tune_it(bob) % in info, stable 1 is closed loops stable, 0 otherwise
+main_folder = fullfile('C:','ARDA','ARDA Raw Output','Results');
+d = dir(main_folder);
+
+controllers = cell(30,1);
+for i = 3:length(d)
+    if d(i).isdir
+        folder = fullfile(main_folder, d(i).name);
+        if exist(fullfile(folder,'bob.mat'),'file')
+            load(fullfile(folder, 'bob.mat'),'bob');
+            if bob.max_iterations >= 600 && length(bob.history) >= 600
+                [C, info, sys] = tune_it(bob); % in info, stable 1 is closed loops stable, 0 otherwise
+                if info.Stable
+                    arda1 = bob.history{1};
+                    idx = arda1.temperature_setpoint - 1;
+                    if isempty(controllers(idx))
+                        controllers{idx} = C;
+                    else
+                        error('Tuning.m tried to overwrite a non-empty cell.')
+                    end
+                end
+            end
+        end
+    end
+end
+
 
 function [C, info, sys] = tune_it(bob)
-nx = 5; % order of state space model
-n = nx + 1;
+n = 5; % order of state space model
+nx = n + 1;
 Y =  bob.outputs(:,1);%[zeros(n,1); bob.outputs(:,9)] ];
 
 U = bob.voltage;
@@ -40,8 +47,8 @@ zv1 = ze(floor(length(U)*2/3 + 1):end);
 opt = ssestOptions("EnforceStability", true);
 sys = ssest(ze1, nx, opt);
 
-figure
-compare(ze1, sys)
+% figure
+% compare(ze1, sys)
 
 G = idtf(sys, 'InputName', 'u', 'OutputName','y');
 % C1 = pidtune(tf(1),'PID');
@@ -55,10 +62,10 @@ n_unstable_poles = sum(pole(G) > 0);
 
 %% Estimate frequency response
 % with fixed frequency resolution using spectral analysis
-figure
-ge = spa(ze);
-b = bodeplot(ge);
-showConfidence(b,3)
+% figure
+% ge = spa(ze);
+% b = bodeplot(ge);
+% showConfidence(b,3)
 
 %% Estimate impulse response model
 % with persistence-of-exitation analysis on the input data
@@ -66,8 +73,8 @@ showConfidence(b,3)
 % response estimation to analyze I/O data for feedback
 % effects, delays and significant time constants.
 model_impulse = impulseest(ze1,60);
-figure
-step(model_impulse)
+% figure
+% step(model_impulse)
 delay = delayest(ze1);
 
 %% Estimate ARX models
@@ -95,9 +102,9 @@ catch
 end
 
 %% Plot system step and impluse responses
-figure
-subplot(2,1,1); step(sys)
-subplot(2,1,2); impulse(sys)
+% figure
+% subplot(2,1,1); step(sys)
+% subplot(2,1,2); impulse(sys)
 
 %% Tune
 bandwidth = 0.03;

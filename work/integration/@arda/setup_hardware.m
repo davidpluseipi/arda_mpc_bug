@@ -1,13 +1,9 @@
 function setup_hardware(arda)
 
-%% LIDAR
-if arda.using_lidar
-    arda.pipe = realsense.pipeline();
-    arda.point_cloud = realsense.pointcloud();
-    arda.profile = arda.pipe.start();
-end
+
 
 if ~arda.simulation_only
+       
     %% Setup Arduino
     if arda.using_arduino_hardware
         try
@@ -48,6 +44,7 @@ if ~arda.simulation_only
             arda.ni_daq_obj.addinput("cDAQ1Mod5","ai1","Voltage")
             
             %% Analog output module
+            arda.ni_daq_obj.addoutput("cDAQ1Mod3","ao0","Voltage");
             arda.ni_daq_obj.addoutput("cDAQ1Mod3","ao1","Voltage");
             
         catch er
@@ -58,6 +55,18 @@ if ~arda.simulation_only
         end
     end
     
+    %% LIDAR
+    if arda.using_lidar
+        arda.pipe = realsense.pipeline();
+        arda.point_cloud = realsense.pointcloud();
+        arda.profile = arda.pipe.start();
+    end
+    
+    %% Load cell
+    if arda.using_load_cell
+        arda.load_cell_obj = serialport("COM5",9600);
+        configureTerminator(arda.load_cell_obj,"CR/LF")
+    end
     
 end
 end

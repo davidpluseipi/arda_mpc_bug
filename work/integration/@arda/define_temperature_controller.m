@@ -24,9 +24,11 @@ else
     arda.pid.K_p = C.Kp;
     arda.pid.K_i = C.Ki;
     arda.pid.K_d = C.Kd;
+    arda.pid.b = C.b;
+    arda.pid.c = C.c;
     arda.pid.tau = 1;
     arda.pid.min_output = 0;
-    arda.pid.max_output = 0.5;
+    arda.pid.max_output = 5/6;
     
     %     arda.pid.K_p = 0.0179;
     %     arda.pid.K_i = 1.37e-6;

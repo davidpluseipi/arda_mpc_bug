@@ -8,7 +8,7 @@ classdef arda < handle
         selftest_done = false
         startup_done = false
         shutdown_done = false
-        
+        data
 
     end
     

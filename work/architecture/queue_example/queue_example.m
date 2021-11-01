@@ -2,7 +2,7 @@ function queue_example()
 
 for i = 1:5
     f(i) = parfeval(@capture_data, 1);
-    B = afterEach(f, @disp, 0)
+    B = afterEach(f, @disp, 0) % waits
 end
 
 end

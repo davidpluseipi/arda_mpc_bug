@@ -8,7 +8,7 @@ classdef controller_pid < handle
         K_i {mustBeNumeric} = 0
         K_d {mustBeNumeric} = 0
         
-        % 2DOF factors
+        % 2DOF parameters
         b {mustBeNumeric} = 1
         c {mustBeNumeric} = 1
         
@@ -40,6 +40,6 @@ classdef controller_pid < handle
             end
         end
         
-         calculate_controller_output(controller_pid, setpoint, measurement)
+        calculate_controller_output(controller_pid, setpoint, measurement)
     end
 end

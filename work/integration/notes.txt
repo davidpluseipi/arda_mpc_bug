@@ -1,0 +1,6 @@
+- 24 V into A1
+- Ground into A2
+- daq pulse into 25
+- 24 V into 15
+- positive (red) of fan into 18
+- neg side of fan into common

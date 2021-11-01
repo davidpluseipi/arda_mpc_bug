@@ -51,13 +51,12 @@ classdef arda < matlab.System
         idx (1,1) {mustBeNumeric} = 1
         save_to_datastore (1,1) {mustBeNumericOrLogical} = false
         pool
-        fig
-        dialog_box
         specific_heat_fit_obj {isobject}
         draw_times
         arduino_daq_obj {isobject}
         sensor_dht22 {isobject}
         ni_daq_obj {isobject}
+        serial
     end
     
     properties % gas mixture and simulation
@@ -75,7 +74,7 @@ classdef arda < matlab.System
         T_h (1,1) {mustBeNumeric}
         V_g (1,1) {mustBeNumeric}
         
-        outputs
+        outputs 
         P_h
         m_steam
         loop_time {isvector}
@@ -104,10 +103,15 @@ classdef arda < matlab.System
         using_arduino_hardware (1,1) {mustBeNumericOrLogical} = false 
         using_app (1,1) {mustBeNumericOrLogical} = false
         datastore_folder (1,:) {ischar} = fullfile('C:','ARDA','ARDA Raw Output','Results')
+        delete_app_on_completion (1,1) {mustBeNumericOrLogical} = false;
+        using_load_cell (1,1) {mustBeNumericOrLogical} = false;
     end
     
     
     properties % sensors
+        load_cell_obj (1,1)
+        weight_lb (1,1) {mustBeNumeric} = 0;
+        mass_kg (1,1) {mustBeNumeric} = 0;
         temperature_sensor_1 (1,1) {isobject}
         temperature_sensor_2 (1,1) {isobject}
         relative_humidity_sensor_1 (1,1) {isobject}
@@ -157,13 +161,7 @@ classdef arda < matlab.System
             
             properties = namedargs2cell(prop_args);
             
-            obj.m_steam = zeros(obj.max_iterations, 1);
-            obj.P_h = zeros(obj.max_iterations, 1);
-            obj.draw_times = 1:2:obj.max_iterations;
-            obj.resistance = zeros(obj.max_iterations,1);
-            obj.time = NaT(obj.max_iterations,1);
-            obj.loop_time = NaN(obj.max_iterations,1);
-            obj.history = cell(obj.max_iterations,1);
+
             
             if size(properties,2) >= 1
                 for i = 1:size(properties,1)

@@ -2,7 +2,7 @@
 clear; clc
 
 %% Setup
-harry = arda2();
+harry = arda();
 harry.data = 0:20;
 pool = gcp;
 i = 1;
