@@ -48,5 +48,6 @@ q_0 = 0;
 
 % Initial state vector
 arda.x_0 = [arda.T_g; arda.T_h; arda.T_o; arda.p_g; arda.p_v;...
-    arda.p_a; arda.V_g; q_0; arda.phi; arda.p_s; arda.m_v; arda.m_a];
+            arda.p_a; arda.V_g; q_0; arda.phi; arda.p_s;...
+            arda.m_v; arda.m_a];
 end

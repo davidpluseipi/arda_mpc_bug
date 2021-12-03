@@ -182,6 +182,29 @@ end
 % Establish a consistent set of ICs
 bob.set_initial_conditions();
 
+% Create nonlinear mpc 
+bob.mpc = controller_mpc(bob.x_0);
+last_mv = [0 0];
+x = bob.x_0;
+ref = [300 0.5];
+stop_time = 15;
+T = zeros(stop_time,1);
+phi = T;
+for ii = 1:stop_time
+    mv = nlmpcmove(bob.mpc.nlmpc1, x, last_mv, ref);
+    x = state_function(x,mv) + x;
+    last_mv = mv;
+    T(ii) = x(1);
+    phi(ii) = x(9);
+    disp(ii)
+end
+figure
+subplot(2,1,1)
+plot(T); grid on
+subplot(2,1,2)
+plot(phi); grid on
+return
+
 % Create and define the temperature controller
 bob.pid = controller_pid();
 bob.define_temperature_controller();

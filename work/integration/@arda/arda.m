@@ -23,7 +23,7 @@ classdef arda < matlab.System
         V2
         slope
         controllers
-        
+        mpc
     end
     
     properties (SetObservable = true)

@@ -407,7 +407,6 @@ end
         if (Kelvin < 265 || Kelvin > 1500)
             DryAirDensity = -1;
             disp('Temp parameter for Density out of range.');
-            keyboard
         elseif (kPa > 370 || kPa < 10)
             DryAirDensity = -1;
             disp('Pres parameter for Density out of range.');
