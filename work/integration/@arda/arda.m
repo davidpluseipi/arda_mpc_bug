@@ -71,11 +71,12 @@ classdef arda < matlab.System
         rho_a (1,1) {mustBeNumeric}
         T_g (1,1) {mustBeNumeric} = 20
         T_o (1,1) {mustBeNumeric}
-        T_h (1,1) {mustBeNumeric}
+        T_h (1,1) {mustBeNumeric} = 20
         V_g (1,1) {mustBeNumeric}
+        flow (1,1) {mustBeNumeric}
         
         outputs 
-        P_h
+        V_h
         m_steam
         loop_time {isvector}
         history {iscell}

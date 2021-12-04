@@ -6,9 +6,10 @@ clear; close all; clc
 disp('Starting Test 1')
 bob = arda();
 bob.simulation_only = true;
-bob.temperature_setpoint = 25;
-bob.max_iterations = 300;
-bob.live_plot = false;
+bob.temperature_setpoint = 300-273.15;
+bob.max_iterations = 30;
+bob.live_plot = true;
+bob.progress_bar = true;
 k = 3; % number of times setpoint changes
 step_up = 1; % deg C
 bob.t = floor(linspace(1, bob.max_iterations, k+2));

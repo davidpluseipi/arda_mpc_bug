@@ -155,11 +155,11 @@ classdef controller_mpc < handle
                 % Typical starting guess allows 10-20 samples to cover the desired rise time
 
                 % Prediction horizon
-                prediction_horizon = 50; %round(desired_rise_time - k); % sec
+                prediction_horizon = round(desired_rise_time - k); % sec
                 % Typically long enough to capture transient reponse and significant dynamic
 
                 % Control horizon
-                control_horizon = 2; %round(0.2 * prediction_horizon); % sec
+                control_horizon = round(0.2 * prediction_horizon); % sec
                 % Typically 10-20% of % prediction horizon
 
                 % Define variables
