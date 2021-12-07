@@ -71,7 +71,7 @@ end
 
 %% Setup
 bob.m_steam = zeros(bob.max_iterations, 1);
-bob.P_h = zeros(bob.max_iterations, 1);
+bob.V_h = zeros(bob.max_iterations, 1);
 bob.draw_times = 1:2:bob.max_iterations;
 bob.resistance = zeros(bob.max_iterations,1);
 bob.time = NaT(bob.max_iterations,1);
@@ -317,6 +317,9 @@ end
         last_control = [0 0 0];
         ref = [300 0.5 0.1];
         o = zeros(3, bob.max_iterations); % mpc simulation outputs
+        if strcmp(bob.mpc.type, 'linear')
+            controller_state_obj = mpcstate(bob.mpc.mpc1);
+        end
 
         %% Loop
         for i = 1:bob.max_iterations
@@ -372,10 +375,29 @@ end
             ref(3) = 0.1;
 
             % Calculate controller output
-            mv = nlmpcmove(bob.mpc.nlmpc1, x, last_control, ref); % Calculate next mv
-            mv(2) = mv(2)/bob.mpc.nlmpc1.Ts; % Adjust steam from kg/s to kg/Ts
-            last_control = mv;
-            V_h(i) = mv(1);
+
+            %% linear mpc
+            if strcmp(bob.mpc.type, 'linear')
+                if i == 1
+                    mv = mpcmove(bob.mpc.mpc1, controller_state_obj,...
+                        bob.mpc.mpc1.Model.Nominal.Y, ref, []);
+                else
+                    mv = mpcmove(bob.mpc.mpc1, x, o(:,i-1), ref, []);
+                end
+
+            elseif strcmp(bob.mpc.type, 'nonlinear')
+
+                %% nonlinear mpc
+                mv = nlmpcmove(bob.mpc.nlmpc1, x, last_control, ref); % Calculate next mv
+                last_control = mv;
+
+            end
+
+            bob.V_h(i) = mv(1);
+
+            % mv(2) = mv(2)/bob.mpc.nlmpc1.Ts; % Adjust steam from kg/s to kg/Ts
+            
+            
 
             %% Actuator
             % When using the Arduino, the heater can only be on or off
@@ -452,8 +474,7 @@ end
             
             % Call ode solver
             % [~,y] = ode23(@(t,y)odefun(t,y,bob),[0 bob.step_size],bob.x_0);
-            x = state_function(x, mv) + x;
-            o(:,i) = output_function(x, mv);
+            
             
             
 
@@ -555,7 +576,7 @@ end
             bob.p_a = bob.outputs(i,6);
             bob.p_s = bob.outputs(i,10);
             bob.m_v = bob.outputs(i,11);
-            bob.outputs(i,13) = bob.P_h(i);
+            bob.outputs(i,13) = bob.V_h(i);
 
             % If user has opted for a live plot of the date during the run
             if bob.live_plot
@@ -576,7 +597,7 @@ end
                     app.phiEditField.Value = bob.phi;
                     app.m_vEditField.Value = bob.m_v;
                     app.m_aEditField.Value = bob.m_a;
-                    app.P_hEditField.Value = bob.P_h(i);
+                    app.P_hEditField.Value = bob.V_h(i);
                     app.p_sEditField.Value = bob.p_s;
                     app.iEditField.Value = i;
 
@@ -596,7 +617,7 @@ end
 
                     L = length(bob.outputs(:,1));
                     xx = 1:L;
-                    xx_16 = 1:length(bob.P_h);
+                    xx_16 = 1:length(bob.V_h);
 
                     yy_profile = bob.outputs(:,1) - c2k;
                     yy_12 = yy_profile;
@@ -610,7 +631,7 @@ end
                     yy_15 = bob.outputs(:,10);
                     yy_14 = bob.outputs(:,11);
                     yy_13 = bob.outputs(:,12);
-                    yy_16 = bob.P_h;
+                    yy_16 = bob.V_h;
                     yy_17 = bob.voltage;
                     yy_18 = zeros(L,1);
                     yy_19 = zeros(L,1);

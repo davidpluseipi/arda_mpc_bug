@@ -183,7 +183,7 @@ end
 bob.set_initial_conditions();
 
 % Create nonlinear mpc
-bob.mpc = controller_mpc(bob.x_0);
+bob.MPC = controller_mpc(bob.x_0, "type", "linear");
 
 % % Create and define the temperature controller
 % bob.pid = controller_pid();
@@ -317,6 +317,11 @@ end
         last_control = [0 0 0];
         ref = [300 0.5 0.1];
         o = zeros(3, bob.max_iterations); % mpc simulation outputs
+        if strcmp(bob.MPC.type, 'linear')
+
+            controller_state_obj = mpcstate(bob.MPC.mpc1);
+            
+        end
 
         %% Loop
         for i = 1:bob.max_iterations
@@ -372,10 +377,31 @@ end
             ref(3) = 0.1;
 
             % Calculate controller output
-            mv = nlmpcmove(bob.mpc.nlmpc1, x, last_control, ref); % Calculate next mv
-            %mv(2) = mv(2)/bob.mpc.nlmpc1.Ts; % Adjust steam from kg/s to kg/Ts
-            last_control = mv;
+
+            %% linear mpc
+            if strcmp(bob.mpc.type, 'linear')
+                if i == 1
+                    mv = mpcmove(bob.mpc.mpc1, controller_state_obj,...
+                        bob.mpc.mpc1.Model.Nominal.Y, ref, []);
+                else
+                    mv = mpcmove(bob.mpc.mpc1, controller_state_obj,...
+                        o(:,i-1), ref, []);
+                end
+
+            elseif strcmp(bob.mpc.type, 'nonlinear')
+
+                %% nonlinear mpc
+                mv = nlmpcmove(bob.mpc.nlmpc1, x, last_control, ref); % Calculate next mv
+                last_control = mv;
+
+            end
+
             bob.V_h(i) = mv(1);
+
+            % mv(2) = mv(2)/bob.mpc.nlmpc1.Ts; % Adjust steam from kg/s to kg/Ts
+            
+            
+            
 
             %% Actuator
             % When using the Arduino, the heater can only be on or off

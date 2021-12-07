@@ -1,7 +1,7 @@
 function T = make_smooth_step(step_time, initial_value, final_value, Ts,...
     simulation_stop_time, variable_str)
 
-persistent plotted
+% persistent plotted
 
 a = (final_value - initial_value)/2;
 xc = 4 + step_time;
