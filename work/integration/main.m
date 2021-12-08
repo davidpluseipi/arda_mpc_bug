@@ -1,9 +1,5 @@
 function [bob] = main(bob, options)
-%% MAIN  Run aRDA
-%
-%   [ARDA_OBJ] = MAIN(ARDA_OBJ) runs the aRDA with preselected options.
-%
-%%
+%% [ARDA_OBJ] = MAIN(ARDA_OBJ) runs the aRDA with preselected options.
 arguments
     bob
     options.app
@@ -183,8 +179,10 @@ end
 bob.set_initial_conditions();
 
 % Create nonlinear mpc
-bob.MPC = controller_mpc(bob.x_0, "type", "linear");
-
+bob.controller = controller_mpc(bob.x_0, "type", "linear");
+save bob.mat bob
+out = sim("simple_arda_mpc","TimeOut",3000);
+return
 % % Create and define the temperature controller
 % bob.pid = controller_pid();
 % bob.define_temperature_controller();
@@ -316,11 +314,11 @@ end
         x = bob.x_0; % initial state
         last_control = [0 0 0];
         ref = [300 0.5 0.1];
-        o = zeros(3, bob.max_iterations); % mpc simulation outputs
-        if strcmp(bob.MPC.type, 'linear')
+        y = zeros(3, bob.max_iterations); % mpc simulation outputs
+        if strcmp(bob.controller.type, 'linear')
 
-            controller_state_obj = mpcstate(bob.MPC.mpc1);
-            
+            controller_state_obj = mpcstate(bob.controller.mpc1);
+
         end
 
         %% Loop
@@ -379,26 +377,31 @@ end
             % Calculate controller output
 
             %% linear mpc
-            if strcmp(bob.mpc.type, 'linear')
+            if strcmp(bob.controller.type, 'linear')
+
                 if i == 1
-                    mv = mpcmove(bob.mpc.mpc1, controller_state_obj,...
-                        bob.mpc.mpc1.Model.Nominal.Y, ref, []);
+
+                    mv = mpcmove(bob.controller.mpc1, controller_state_obj,...
+                        bob.controller.mpc1.Model.Nominal.Y, ref, []);
+
                 else
-                    mv = mpcmove(bob.mpc.mpc1, controller_state_obj,...
-                        o(:,i-1), ref, []);
+
+                    mv = mpcmove(bob.controller.mpc1, controller_state_obj,...
+                        y(:,i-1), ref, []);
+
                 end
 
-            elseif strcmp(bob.mpc.type, 'nonlinear')
+            elseif strcmp(bob.controller.type, 'nonlinear')
 
                 %% nonlinear mpc
-                mv = nlmpcmove(bob.mpc.nlmpc1, x, last_control, ref); % Calculate next mv
+                mv = nlmpcmove(bob.controller.nlmpc1, x, last_control, ref); % Calculate next mv
                 last_control = mv;
 
             end
 
             bob.V_h(i) = mv(1);
 
-            % mv(2) = mv(2)/bob.mpc.nlmpc1.Ts; % Adjust steam from kg/s to kg/Ts
+            % mv(2) = mv(2)/bob.controller.nlmpc1.Ts; % Adjust steam from kg/s to kg/Ts
             
             
             
@@ -478,9 +481,14 @@ end
             
             % Call ode solver
             % [~,y] = ode23(@(t,y)odefun(t,y,bob),[0 bob.step_size],bob.x_0);
-            x = state_function(x, mv) + x;
-            o(:,i) = output_function(x, mv);
+%             x = state_function(x, mv) + x;
+%             o(:,i) = output_function(x, mv);
             
+            y(:,i) = bob.controller.mpc1.Model.Plant.C * x + ...
+                bob.controller.mpc1.Model.Plant.D * mv;
+
+            x = bob.controller.mpc1.Model.Plant.A * x + ...
+                bob.controller.mpc1.Model.Plant.B * mv;
             
 
             %% Acquire data from hardware sensors
@@ -572,23 +580,26 @@ end
                 bob.time(i) = datetime('now');
             end
 %             bob.outputs(i,1:12) = y(end,:);
-            bob.outputs(i,1:12) = x;
+            bob.outputs(i,1:12) = x';
             bob.T_g = bob.outputs(i,1); %disp(bob.T_g)
             bob.T_h = bob.outputs(i,2); %disp(bob.T_h)
-            bob.phi = bob.outputs(i,9);
+            bob.phi = bob.outputs(i,8); %disp(bob.phi)
             bob.T_o = bob.outputs(i,3);
             bob.p_v = bob.outputs(i,5);
             bob.p_a = bob.outputs(i,6);
-            bob.p_s = bob.outputs(i,10);
-            bob.m_v = bob.outputs(i,11);
+            bob.p_s = bob.outputs(i,9);
+            bob.m_v = bob.outputs(i,10);
+            bob.flow = bob.outputs(i,12);
             bob.outputs(i,13) = bob.V_h(i);
 
             % If user has opted for a live plot of the date during the run
             if bob.live_plot
 
                 if ~exist('app','var')
+
                     turn_off(bob)
                     break
+
                 else
 
                     % Update the gauges

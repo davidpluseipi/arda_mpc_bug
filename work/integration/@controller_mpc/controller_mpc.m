@@ -3,6 +3,7 @@ classdef controller_mpc < handle
     properties
 
         mpc1
+        mpc1_initial_state
         nlmpc1
         type {mustBeMember(type,{'linear','nonlinear'})} = 'linear'
         use_data {mustBeNumericOrLogical} = false
@@ -12,7 +13,7 @@ classdef controller_mpc < handle
     methods
 
         % Constructor
-        function obj = controller_mpc(x_0,options)
+        function obj = controller_mpc(x_0, options)
 
             arguments
 
@@ -29,7 +30,8 @@ classdef controller_mpc < handle
                 if options.use_data == true
 
                     obj.use_data = true;
-
+                    simulink_model = "plant";
+                    set_param(simulink_model, 'SolverType', 'Fixed-step');
                     simout = sim("simple_arda", "TimeOut", 600);
 
                     try
@@ -39,14 +41,16 @@ classdef controller_mpc < handle
                     catch er
 
                         disp(er.message)
-                        load("linearized_model.mat","sys")
+                        load("model.mat","sys")
                         plant = sys;
 
                     end
 
                 else
+                    
+                    %% Linearize directly from the Simulink model
 
-                    %% Obtain linear plant model at initial operating point
+                    % Obtain linear plant model at initial operating point
                     model = "plant";
                     op = operspec(model);
 
@@ -68,97 +72,62 @@ classdef controller_mpc < handle
                     [point, report] = findop(model, op);
 
                     % Get nominal values of x,y,and u
+                    % Note: These 3 variables need to be corrected
                     x0 = [report.States(1).x; report.States(2).x];
                     y0 = [report.Outputs(1).y; report.Outputs(2).y];
                     u0 = [report.Inputs(1).u; report.Inputs(2).u; report.Inputs(3).u];
 
-                    %% Linearize and make new mpc
-                    %                 try
-                    %                     [A,B,C,D] = dlinmod(model, Ts);
-                    %                     plant = ss(A,B,C,D,Ts);
-                    %                     method = 1;
-                    %                     disp('Linearizing with dlinmod() worked.')
-                    %                 catch er
-                    %                     disp('dlinmod failed')
-                    %                     disp(er.message)
                     plant = linearize(model, point);
-                    %                     method = 2;
-                    %                     disp('Linearizing with linearize() worked.')
-                    %                 end
-                end
 
+                end
+                
+                % Look at the plant's D matrix (should be all zeros if 
+                % no feedthrough)
+                fprintf("Plant D matrix: \n")
                 disp(plant.D)
 
-                %                 if any(plant.D~=0,'all') && method == 1
-                %
-                %                     linsys = linearize(model);
-                %                     plant = linsys;
-                %                     method = 2;
-                %                     disp('linearize')
-                %
-                %                 end
-
+                % Use the MPC toolbox function to check for feedthrough
+                fprintf("\nResults from mpc_checkdirectfeedthrough: \n")
                 feedthrough = ~mpc_checkdirectfeedthrough(plant, 3);
-                fprintf("feedthrough = %f\n", feedthrough)
+                fprintf("feedthrough = %d\n", feedthrough)
 
-                disp("Poles of 'plant':")
+                fprintf("\nPoles:\n")
                 disp(pole(plant))
+
                 n = numel(find(real(eig(plant.A))>1)); % closed loop stable should = 0
-                fprintf('Closed-loop stability (should be 0): %d\n', n)
+                fprintf('\nClosed-loop stability (stable=0): %d\n', n)
 
                 if ~feedthrough && size(plant,1)~=0
 
-
                     sample_time = ceil(plant.Ts);
+
                     if sample_time < 1
+
                         sample_time = 1;
+
                     end
+
+                    fprintf("\nSample time for discretization: %.2f\n", sample_time)
                     c2d_options = c2dOptions("Method","tustin");
+                    fprintf("Previous sample time: %f\n", plant.Ts)
 
-
-                    %%
-                    %                     failure = true;
-                    %                     while failure
-                    %
-                    %                         try
-                    %
-                    %                             sample_time = sample_time/10;
-                    if isct(plant)
-
+                    if isct(plant)                        
+                        
                         plant = c2d(plant, sample_time, c2d_options);
-                        disp('c2d')
-
+                        fprintf("Plant was continuous, but is now discrete.\n")
 
                     elseif isdt(plant)
 
-                        plant = d2d(plant, sample_time, 'Tustin');
-                        disp('d2d')
-
+                        plant = d2d(plant, sample_time, 'zoh');
+                        fprintf("Plant was resampled with d2d().\n")
 
                     end
-                    %
-                    %                             failure = false;
-                    %
-                    %                         catch er
-                    %
-                    %                             disp(er.message)
-                    %                             failure = true;
-                    %
-                    %                         end
-                    %
-                    %
-                    %                         if sample_time < 1e-15
-                    %
-                    %                             break
-                    %
-                    %                         end
-                    %
-                    %
-                    %                     end
+                    
+                    fprintf("Sample time now: %f\n", plant.Ts)
 
                     % closed loop stable, n should = 0
-                    n = numel(find(real(eig(plant.A))>1));
-                    fprintf('Closed-loop stability (should be 0): %d\n', n)
+                    n = numel(find( real(eig(plant.A)) > 1));
+                    fprintf('Closed-loop stability (stable=0): %d\n', n)
 
                 else
 
@@ -166,18 +135,10 @@ classdef controller_mpc < handle
 
                 end
 
-
-
-                %plant.InputGroup.MeasuredDisturbances = 0;
                 plant.InputGroup.ManipulatedVariables = 3;
                 plant.OutputGroup.Measured = 3;
-                %plant.OutputGroup.Unmeasured = 0;
                 plant.InputName = {'u1' 'u2' 'u3'};
                 plant.OutputName = {'y1' 'y2' 'y3'};
-
-
-
-
 
                 % Define signal types
                 plant = setmpcsignals(plant);
@@ -185,16 +146,15 @@ classdef controller_mpc < handle
                 % Prepare to create MPC object
 
                 % Sample time
-                % desired_rise_time = 600;
-                sample_time = 60; % round(desired_rise_time/10);
+                sample_time = 1; % round(desired_rise_time/10);
                 % Typical starting guess allows 10-20 samples to cover the desired rise time
 
                 % Prediction horizon
-                prediction_horizon = 12; %round(desired_rise_time - k); % sec
+                prediction_horizon = 10; %round(desired_rise_time - k); % sec
                 % Typically long enough to capture transient reponse and significant dynamic
 
                 % Control horizon
-                control_horizon = 2; %round(0.2 * prediction_horizon); % sec
+                control_horizon = 1; %round(0.2 * prediction_horizon); % sec
                 % Typically 10-20% of % prediction horizon
 
                 % Define variables
@@ -207,16 +167,15 @@ classdef controller_mpc < handle
                 ov2 = struct("Name", "phi_g", "Units", " ");
                 ov3 = struct("Name", "flow", "Units", "m^3/s");
 
-
                 % Constraints and constraint softness (phyical limits of the system)
                 % Softness. 0 = hard, 1 = average, 20 = large violation allowed
 
                 % Constraint and softness for heater voltage
                 mv1.Min = 0;
                 mv1.Max = 460;
-                mv1.MinECR = 0;
-                mv1.MaxECR = 0;
-                mv1.ScaleFactor = mv1.Max - mv1.Min;
+                mv1.MinECR = 0.001;
+                mv1.MaxECR = 0.001;
+                mv1.ScaleFactor = (mv1.Max - mv1.Min) * 1e-3;
                 mv1.RateMin = -0.001;
                 mv1.RateMax = 0.001;
                 mv1.RateMinECR = 0.1;
@@ -225,9 +184,9 @@ classdef controller_mpc < handle
                 % Constraint and softness for steam injection
                 mv2.Min = 0;
                 mv2.Max = 0.06;
-                mv2.MinECR = 0;
-                mv2.MaxECR = 0;
-                mv2.ScaleFactor = (mv2.Max - mv2.Min) * 0.8e2;
+                mv2.MinECR = 0.001;
+                mv2.MaxECR = 0.001;
+                mv2.ScaleFactor = (mv2.Max - mv2.Min);
                 mv2.RateMin = -1e-12;
                 mv2.RateMax = 1e-12;
                 mv2.RateMinECR = 0.1;
@@ -236,9 +195,9 @@ classdef controller_mpc < handle
                 % Constraint and softness for volumetric airflow (blower)
                 mv3.Min = 0;
                 mv3.Max = 460;
-                mv3.MinECR = 0;
-                mv3.MaxECR = 0;
-                mv3.ScaleFactor = mv3.Max - mv3.Min;
+                mv3.MinECR = 0.001;
+                mv3.MaxECR = 0.001;
+                mv3.ScaleFactor = (mv3.Max - mv3.Min) * 1e-3;
                 mv3.RateMin = -1;
                 mv3.RateMax = 1;
                 mv3.RateMinECR = 0.001;
@@ -247,34 +206,33 @@ classdef controller_mpc < handle
                 % Constraint and softness for gas mixture temperature
                 ov1.Min = 20 + 273.15;
                 ov1.Max = 180 + 273.15;
-                ov1.MinECR = 0;
-                ov1.MaxECR = 0;
-                ov1.ScaleFactor = (ov1.Max - ov1.Min)*1e-3;
+                ov1.MinECR = 0.001;
+                ov1.MaxECR = 0.001;
+                ov1.ScaleFactor = (ov1.Max - ov1.Min)*1e-2;
 
                 % Constraint and softness for gas mixture relative humidity
                 ov2.Min = 0;
                 ov2.Max = 1;
-                ov2.MinECR = 0;
-                ov2.MaxECR = 0;
-                ov2.ScaleFactor = 1000;
+                ov2.MinECR = 0.001;
+                ov2.MaxECR = 0.001;
+                ov2.ScaleFactor = 1;
 
                 % Constraint and softness for volumetric airflow (blower)
                 ov3.Min = 0;
                 ov3.Max = 0.188;
-                ov3.MinECR = 0;
-                ov3.MaxECR = 0;
-                ov3.ScaleFactor = ov3.Max - ov3.Min;
+                ov3.MinECR = 0.001;
+                ov3.MaxECR = 0.001;
+                ov3.ScaleFactor = (ov3.Max - ov3.Min) * 10;
 
                 % Weights
                 % 0 = no penalty for violating constraints. (weight > 1) = penalty
                 weights = struct('MV', [0 0 0],...
-                    'MVRate', 20 * [1 1 1],...
-                    'OV', [20 10 1],...
+                    'MVRate', [20 1000 20],...
+                    'OV', [400 30 1000],...
                     'ECR', 100000);
 
                 % Disturbance / Noise Variable
                 %dv1 = struct("Name", "disturbance", "Units", " ");
-
 
                 plant = minreal(plant);
 
@@ -283,17 +241,26 @@ classdef controller_mpc < handle
                     [mv1; mv2; mv3], [ov1; ov2; ov3]);
 
                 %mpc1 = mpc(plant);
-                mpc_obj.Model.Nominal = struct('X', initial_state,...
-                    'U', [0 0 0], 'Y', [293.15 0.1 0]);
+                try
+
+                    mpc_obj.Model.Nominal = struct('X', initial_state,...
+                        'U', [0 0 0], 'Y', [293.15 0.1 0]);
+
+                catch er
+
+                    disp(er.message)
+                    order = size(mpc_obj.Model.Plant.A, 1);
+                    initial_state = zeros(order, 1);
+                    mpc_obj.Model.Nominal = struct('X', initial_state,...
+                        'U', [0 0 0], 'Y', [293.15 0.1 0]);
+
+                end
 
                 % Try generating an mpc state object (to look for errors)
+                mpc_obj.Model.Plant = minreal(mpc_obj.Model.Plant);
                 review(mpc_obj)
-                xc = mpcstate(mpc_obj);
-
-
+                obj.mpc1_initial_state = mpcstate(mpc_obj);
                 obj.mpc1 = mpc_obj;
-
-
 
             elseif strcmp(options.type, 'nonlinear')
 

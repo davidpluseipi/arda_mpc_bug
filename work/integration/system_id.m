@@ -62,6 +62,7 @@ end
 input = data(:,1:3);
 output = data(:,4:6);
 z = iddata(output, input, Ts);
+
 z.Name = 'arda';
 z.InputName = {'u1' 'u2' 'u3'};
 z.InputUnit = {'V' 'kg/s' 'V'};
@@ -70,18 +71,42 @@ z.OutputUnit = {'degC' ' ' 'm^3/s'};
 
 % Split the data into estimation and validation datasets
 ze = z(1 : 0.9*size(data,1));
-zv = z(length(ze)+1 : end);
+zv = z(length(ze) + 1 : end);
 
-% sys1 = ssest(ze, 1:15, "InputDelay", [1;2;3]);
-[sys, x0] = ssest(ze, 15, "InputDelay", [1;2;3],...
-    ssestOptions("InitialState", "estimate"));
+% Define model structure
+A = ones(12);
+B = ones(12,3);
+C = [1 0 0 0 0 0 0 0 0 0 0 0;
+     0 0 0 0 0 0 0 1 0 0 0 0;
+     0 0 0 0 0 0 0 0 0 0 0 1];
+D = zeros(3);
+K = zeros(12,3);
+sys = idss(A, B, C, D, K, "Ts", Ts);
+
+% Specify which matrices or elements are free to change
+sys.Structure.D.Free(:,:) = false;
+sys.Structure.K.Free(:,:) = false;
+
+% Randomize model initial parameters (so you don't hit a local min)
+sys = init(sys);
+
+% Specify parameterization, feedthrough, and disturbance dynamics
+sys = ssform(sys,...
+    "Form","Canonical",...
+    "Feedthrough", [false false false],...
+    "DisturbanceModel", "none");
+
+% Define ssest options
+options = ssestOptions();
+options.EnforceStability = true;
+options.InputOffset = [1;1;1];
+options.SearchMethod = "lsqnonlin";
+options.SearchOptions.Advanced.UseParallel = true;
+
+%sys1 = ssest(ze, 12:30, "InputDelay", [1;1;1]);
+[sys, x0] = ssest(ze, sys, options);
 fprintf("plant sample time: %f",sys.Ts)
 sys.Ts = Ts;
-
-% Convert model to continuous time
-% model_continuous = d2c(model_discrete,'tustin');
-% model_state_space = idss(model_continuous);
-% model_transfer_function = idtf(model_continuous);
 
 end
 

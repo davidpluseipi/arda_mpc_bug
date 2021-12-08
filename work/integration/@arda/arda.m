@@ -22,8 +22,7 @@ classdef arda < matlab.System
         time {isdatetime}
         V2
         slope
-        controllers
-        MPC
+        controller
     end
     
     properties (SetObservable = true)
@@ -95,7 +94,7 @@ classdef arda < matlab.System
         progress_bar (1,1) {mustBeNumericOrLogical} = false
         live_plot (1,1) {mustBeNumericOrLogical} = false
         final_plots (1,1) {mustBeNumericOrLogical} = false
-        window_style {mustBeMember(window_style,{'normal','docked'})} = 'docked'
+        window_style {mustBeMember(window_style,{'normal','docked'})} = 'normal'
         
         heater {mustBeMember(heater,{'arduino','ni','none'})} = 'none'
         parallel (1,1) {mustBeNumericOrLogical} = false 
