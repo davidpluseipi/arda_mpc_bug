@@ -125,10 +125,10 @@ app.UIAxes_4.XLim = [0 bob.max_iterations];
 app.UIAxes_15.XLim = [0 bob.max_iterations];
 app.UIAxes_14.XLim = [0 bob.max_iterations];
 app.UIAxes_13.XLim = [0 bob.max_iterations];
-app.UIAxes_16.XLim = [0 bob.max_iterations];
-app.UIAxes_17.XLim = [0 bob.max_iterations];
-app.UIAxes_18.XLim = [0 bob.max_iterations];
-app.UIAxes_19.XLim = [0 bob.max_iterations];
+% app.UIAxes_16.XLim = [0 bob.max_iterations];
+% app.UIAxes_17.XLim = [0 bob.max_iterations];
+% app.UIAxes_18.XLim = [0 bob.max_iterations];
+% app.UIAxes_19.XLim = [0 bob.max_iterations];
 
 if bob.live_plot
     app.max_iterationsEditField.Value = bob.max_iterations;
@@ -181,7 +181,17 @@ bob.set_initial_conditions();
 % Create nonlinear mpc
 bob.controller = controller_mpc(bob.x_0, "type", "linear");
 save bob.mat bob
-out = sim("simple_arda_mpc","TimeOut",3000);
+small_step_size = 0.1;
+test_model = "simple_arda_mpc";
+open_system(test_model)
+set_param(test_model, "SolverType","Variable-step")
+set_param("plant", "SolverType", "Variable-step")
+simout = sim(test_model,"TimeOut", 600);
+
+tuning_model = "simple_arda_mpc_tune_me";
+open_system(tuning_model)
+set_param(tuning_model, "SolverType","Variable-step")
+
 return
 % % Create and define the temperature controller
 % bob.pid = controller_pid();
