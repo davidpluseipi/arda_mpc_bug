@@ -57,6 +57,7 @@ classdef controller_mpc < handle
                     save_system(top_model)
 
 
+
                     % Set the Simscape local solver sample time within the 
                     % plant model successfully simulate
                     set_param(strcat(plant_model, "/Solver Configuration"),...
@@ -73,11 +74,17 @@ classdef controller_mpc < handle
                     % set_param(plant_model, 'SolverType', 'Variable-step');
                     save_system(plant_model)
 
+                    try
 
+                        [plant, initial_state] = system_id(simout.logsout);
 
-                    [plant, initial_state] = system_id(simout.logsout);
+                    catch er
 
+                        disp(er.message)
+                        load("model.mat","sys")
+                        plant = sys;
 
+                    end
 
                 else
                     
@@ -121,7 +128,7 @@ classdef controller_mpc < handle
 
                 % Use the MPC toolbox function to check for feedthrough
                 fprintf("\nResults from mpc_checkdirectfeedthrough: \n")
-                feedthrough = ~mpc_checkdirectfeedthrough(plant, 2);
+                feedthrough = ~mpc_checkdirectfeedthrough(plant, 3);
                 fprintf("feedthrough = %d\n", feedthrough)
 
                 fprintf("\nPoles:\n")
@@ -131,6 +138,14 @@ classdef controller_mpc < handle
                 fprintf('\nClosed-loop stability (stable=0): %d\n', n)
 
                 if ~feedthrough && size(plant,1)~=0
+
+%                     sample_time = ceil(plant.Ts);
+% 
+%                     if sample_time < 1
+% 
+%                         sample_time = 1;
+% 
+%                     end
 
                     fprintf("\nSample time for discretization: %.2f\n", Ts)
                     c2d_options = c2dOptions("Method","tustin");
@@ -149,6 +164,8 @@ classdef controller_mpc < handle
                     end
                     
                     fprintf("Sample time now: %f\n", plant.Ts)
+
+                    % closed loop stable, n should = 0
                     n = numel(find( real(eig(plant.A)) > 1));
                     fprintf('Closed-loop stability (stable=0): %d\n', n)
 
@@ -158,11 +175,10 @@ classdef controller_mpc < handle
 
                 end
 
-                plant.InputGroup.ManipulatedVariables = 2;
-                plant.OutputGroup.Measured = 2;
-
-                plant.InputName = {'u1' 'u2'};
-                plant.OutputName = {'y1' 'y2'};
+                plant.InputGroup.ManipulatedVariables = 3;
+                plant.OutputGroup.Measured = 3;
+                plant.InputName = {'u1' 'u2' 'u3'};
+                plant.OutputName = {'y1' 'y2' 'y3'};
 
                 % Define signal types
                 plant = setmpcsignals(plant);
@@ -186,11 +202,11 @@ classdef controller_mpc < handle
                 % Plant inputs (manipulated variables)
                 mv1 = struct("Name", "u1", "Units", "V");
                 mv2 = struct("Name", "u2", "Units", "kg/s");
-  
+                mv3 = struct("Name", "u3", "Units", "V");
                 % Plant outputs (output variables)
                 ov1 = struct("Name", "T_g", "Units", "K");
                 ov2 = struct("Name", "phi_g", "Units", " ");
- 
+                ov3 = struct("Name", "flow", "Units", "m^3/s");
 
                 % Constraints and constraint softness (phyical limits of the system)
                 % Softness. 0 = hard, 1 = average, 20 = large violation allowed
@@ -242,6 +258,12 @@ classdef controller_mpc < handle
                 ov2.MaxECR = 0.001;
                 ov2.ScaleFactor = 1;
 
+                % Constraint and softness for volumetric airflow (blower)
+                ov3.Min = 0;
+                ov3.Max = 0.188;
+                ov3.MinECR = 0.001;
+                ov3.MaxECR = 0.001;
+                ov3.ScaleFactor = (ov3.Max - ov3.Min) * 10;
 
                 % Weights
                 % 0 = no penalty for violating constraints. (weight > 1) = penalty
@@ -331,7 +353,7 @@ classdef controller_mpc < handle
 
                 % Create the object
                 mpc_obj = mpc(plant, sample_time, prediction_horizon, control_horizon, weights,...
-                    [mv1; mv2], [ov1; ov2]);
+                    [mv1; mv2; mv3], [ov1; ov2; ov3]);
 
                 %mpc1 = mpc(plant);
                 try
@@ -345,7 +367,7 @@ classdef controller_mpc < handle
                     order = size(mpc_obj.Model.Plant.A, 1);
                     initial_state = zeros(order, 1);
                     mpc_obj.Model.Nominal = struct('X', initial_state,...
-                        'U', [0 0], 'Y', [293.15 0.1]);
+                        'U', [0 0 0], 'Y', [293.15 0.1 0]);
 
                 end
 
@@ -367,7 +389,7 @@ classdef controller_mpc < handle
                 obj.type = 'nonlinear';
 
                 %% Nonlinear MPC
-                nlmpc1 = nlmpc(12, 2, 2); % states, outputs, inputs
+                nlmpc1 = nlmpc(12, 3, 3); % states, outputs, inputs
 
                 % State fcn: Predicts how the plant states evolve over time
                 nlmpc1.Model.StateFcn = @(x,u) state_function(x,u);

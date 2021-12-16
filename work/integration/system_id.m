@@ -16,9 +16,9 @@ if options.logsout
 
     % Encapsulate the input/output data into an iddata object
 
-    idx = zeros(6,1);
+    idx = zeros(4,1);
     names = logsout.getElementNames;
-    correct_names = {'u1' 'u2' 'u3' 'y1' 'y2' 'y3'};
+    correct_names = {'u1' 'u2' 'y1' 'y2'};
 
     for i = 1:length(correct_names)
 
@@ -59,15 +59,15 @@ if options.logsout
 
 end
 
-input = data(:,1:3);
-output = data(:,4:6);
+input = data(:,1:2);
+output = data(:,3:4);
 z = iddata(output, input, Ts);
 
 z.Name = 'arda';
-z.InputName = {'u1' 'u2' 'u3'};
-z.InputUnit = {'V' 'kg/s' 'V'};
-z.OutputName = {'y1' 'y2' 'y3'};
-z.OutputUnit = {'degC' ' ' 'm^3/s'};
+z.InputName = {'u1' 'u2'};
+z.InputUnit = {'V' 'kg/s'};
+z.OutputName = {'y1' 'y2'};
+z.OutputUnit = {'degC' ' '};
 
 % Split the data into estimation and validation datasets
 ze = z(1 : 0.9*size(data,1));
@@ -75,12 +75,11 @@ zv = z(length(ze) + 1 : end);
 
 % Define model structure
 A = ones(12);
-B = ones(12,3);
+B = ones(12,2);
 C = [1 0 0 0 0 0 0 0 0 0 0 0;
-     0 0 0 0 0 0 0 1 0 0 0 0;
-     0 0 0 0 0 0 0 0 0 0 0 1];
-D = zeros(3);
-K = zeros(12,3);
+     0 0 0 0 0 0 0 1 0 0 0 0];
+D = zeros(2);
+K = zeros(12,2);
 sys = idss(A, B, C, D, K, "Ts", Ts);
 
 % Specify which matrices or elements are free to change
@@ -93,13 +92,13 @@ sys = init(sys);
 % Specify parameterization, feedthrough, and disturbance dynamics
 sys = ssform(sys,...
     "Form","Canonical",...
-    "Feedthrough", [false false false],...
+    "Feedthrough", [false false],...
     "DisturbanceModel", "none");
 
 % Define ssest options
 options = ssestOptions();
 options.EnforceStability = true;
-options.InputOffset = [1;1;1];
+options.InputOffset = [1;1];
 options.SearchMethod = "lsqnonlin";
 options.SearchOptions.Advanced.UseParallel = true;
 
