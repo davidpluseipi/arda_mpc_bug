@@ -186,11 +186,13 @@ test_model = "simple_arda_mpc";
 open_system(test_model)
 set_param(test_model, "SolverType","Variable-step")
 set_param("plant", "SolverType", "Variable-step")
-simout = sim(test_model,"TimeOut", 600);
+%simout = sim(test_model,"TimeOut", 600);
 
 tuning_model = "simple_arda_mpc_tune_me";
 open_system(tuning_model)
 set_param(tuning_model, "SolverType","Variable-step")
+uiopen('C:\Users\dmeissner\stuff\arda\work\integration\data_inspector_session.mldatx',1)
+simout = sim(tuning_model,"TimeOut", 4.9);
 
 return
 % % Create and define the temperature controller

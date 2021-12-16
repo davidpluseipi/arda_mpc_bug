@@ -23,6 +23,18 @@ classdef controller_mpc < handle
 
             end
 
+            % Open data dictionary and create data dictionary object
+            data_dictionary_obj = Simulink.data.dictionary.open("data_dictionary1.sldd");
+
+            % Open section and create data dictionary section object
+            section_obj = getSection(data_dictionary_obj, "Design Data"); % default name
+            % Use getEntry and addEntry on section object
+
+
+            % Sample time
+            ts_obj = getEntry(section_obj, "Ts");
+            Ts =  ts_obj.getValue;
+
             if strcmp(options.type, 'linear')
 
                 obj.type = 'linear';
@@ -30,17 +42,21 @@ classdef controller_mpc < handle
                 if options.use_data == true
 
                     obj.use_data = true;
-                    small_step_size = 0.1;
+                    small_step_size = Ts;
+
+                    plant_model = "plant"; % Simulink plant model 
+                    open_system(plant_model) % Loads and opens
+                    set_param(plant_model, "SolverType", "Fixed-step");
+                    set_param(plant_model, "FixedStep", num2str(small_step_size))
+                    save_system(plant_model)
+
                     top_model = "simple_arda"; % top level Simulink model
                     open_system(top_model)
                     set_param(top_model, "SolverType","Fixed-step")
                     set_param(top_model, "FixedStep", num2str(small_step_size))
                     save_system(top_model)
 
-                    plant_model = "plant"; % Simulink plant model 
-                    open_system(plant_model) % Loads and opens
-                    set_param(plant_model, "SolverType", "Fixed-step");
-                    set_param(plant_model, "FixedStep", num2str(small_step_size))
+
 
                     % Set the Simscape local solver sample time within the 
                     % plant model successfully simulate
@@ -123,26 +139,26 @@ classdef controller_mpc < handle
 
                 if ~feedthrough && size(plant,1)~=0
 
-                    sample_time = ceil(plant.Ts);
+%                     sample_time = ceil(plant.Ts);
+% 
+%                     if sample_time < 1
+% 
+%                         sample_time = 1;
+% 
+%                     end
 
-                    if sample_time < 1
-
-                        sample_time = 1;
-
-                    end
-
-                    fprintf("\nSample time for discretization: %.2f\n", sample_time)
+                    fprintf("\nSample time for discretization: %.2f\n", Ts)
                     c2d_options = c2dOptions("Method","tustin");
-                    fprintf("Previous sample time: %f\n", plant.Ts)
+                    fprintf("Previous sample time: %1.1f\n", plant.Ts)
 
                     if isct(plant)                        
                         
-                        plant = c2d(plant, sample_time, c2d_options);
+                        plant = c2d(plant, Ts, c2d_options);
                         fprintf("Plant was continuous, but is now discrete.\n")
 
                     elseif isdt(plant)
 
-                        plant = d2d(plant, sample_time, 'zoh');
+                        plant = d2d(plant, Ts, 'tustin');
                         fprintf("Plant was resampled with d2d().\n")
 
                     end
@@ -168,17 +184,18 @@ classdef controller_mpc < handle
                 plant = setmpcsignals(plant);
 
                 % Prepare to create MPC object
-
-                % Sample time
-                sample_time = 1; % round(desired_rise_time/10);
+                
+                sample_time = ts_obj.getValue; % round(desired_rise_time/10);
                 % Typical starting guess allows 10-20 samples to cover the desired rise time
 
                 % Prediction horizon
-                prediction_horizon = 10; %round(desired_rise_time - k); % sec
+                ph_obj = getEntry(section_obj, "prediction_horizon");
+                prediction_horizon = ph_obj.getValue; %round(desired_rise_time - k); % sec
                 % Typically long enough to capture transient reponse and significant dynamic
 
                 % Control horizon
-                control_horizon = 1; %round(0.2 * prediction_horizon); % sec
+                ch_obj = getEntry(section_obj, "control_horizon");
+                control_horizon = ch_obj.getValue; %round(0.2 * prediction_horizon); % sec
                 % Typically 10-20% of % prediction horizon
 
                 % Define variables
@@ -207,10 +224,10 @@ classdef controller_mpc < handle
 
                 % Constraint and softness for steam injection
                 mv2.Min = 0;
-                mv2.Max = 0.06;
+                mv2.Max = 0.02;
                 mv2.MinECR = 0.001;
-                mv2.MaxECR = 0.001;
-                mv2.ScaleFactor = (mv2.Max - mv2.Min);
+                mv2.MaxECR = 0.01;
+                mv2.ScaleFactor = (mv2.Max - mv2.Min) * 1e1;
                 mv2.RateMin = -1e-12;
                 mv2.RateMax = 1e-12;
                 mv2.RateMinECR = 0.1;
@@ -252,23 +269,43 @@ classdef controller_mpc < handle
                 % 0 = no penalty for violating constraints. (weight > 1) = penalty
                 
                 % Pull the weights from the last time they were optimized
-                % Open data dictionary and create data dictionary object
-                data_dictionary_obj = Simulink.data.dictionary.open("data_dictionary1.sldd");
                 
-                % Open section and create data dictionary section object
-                section_obj = getSection(data_dictionary_obj, "Design Data"); % default name
 
-                % Use getEntry and addEntry on section object
+                
                 
                 % Manipulated variable weights
                 u1_weight_obj = getEntry(section_obj, "u1_wt");
                 u2_weight_obj = getEntry(section_obj, "u2_wt");
                 u3_weight_obj = getEntry(section_obj, "u3_wt");
 
+                u1_weights = ones(prediction_horizon,1);
+                u2_weights = ones(prediction_horizon,1);
+                u3_weights = ones(prediction_horizon,1);
+
+                for i = 1:prediction_horizon
+
+                    u1_weights(i) = u1_weight_obj.getValue / i;
+                    u2_weights(i) = u2_weight_obj.getValue / i;
+                    u3_weights(i) = u3_weight_obj.getValue / i;
+
+                end
+
                 % Manipulated variable rate weights
                 u1p_weight_obj = getEntry(section_obj, "u1p_wt"); % p for prime, derivative, aka rate
                 u2p_weight_obj = getEntry(section_obj, "u2p_wt");
                 u3p_weight_obj = getEntry(section_obj, "u3p_wt");
+
+                u1p_weights = ones(prediction_horizon,1);
+                u2p_weights = ones(prediction_horizon,1);
+                u3p_weights = ones(prediction_horizon,1);
+
+                for i = 1:prediction_horizon
+
+                    u1p_weights(i) = u1p_weight_obj.getValue / i;
+                    u2p_weights(i) = u2p_weight_obj.getValue / i;
+                    u3p_weights(i) = u3p_weight_obj.getValue / i;
+
+                end
                 
                 % Output variable weights
                 y1_weight_obj = getEntry(section_obj, "y1_wt");
@@ -285,9 +322,7 @@ classdef controller_mpc < handle
                     y2_weights(i) = y2_weight_obj.getValue / i;
                     y3_weights(i) = y3_weight_obj.getValue / i;
 
-                end
-
-                
+                end              
 
                 % Slack variable tuning weight (ECR = equal concern for
                 % relaxation... used to make all soft constraints harder (increase) or
@@ -295,17 +330,17 @@ classdef controller_mpc < handle
                 ecr_weight_obj = getEntry(section_obj, "ecr_wt");
                 
                 weights = struct("MV", ...
-                    [u1_weight_obj.getValue,...
-                     u2_weight_obj.getValue,...
-                     u3_weight_obj.getValue],...
+                    [u1_weights(1),...
+                     u2_weights(1),...
+                     u3_weights(1)],...
                     "MVRate",...
-                    [u1p_weight_obj.getValue,...
-                     u2p_weight_obj.getValue,...
-                     u3p_weight_obj.getValue],...
+                    [u1p_weights(1),...
+                     u2p_weights(1),...
+                     u3p_weights(1)],...
                     "OV",...
-                    [y1_weights,...
-                     y2_weights,...
-                     y3_weights],...
+                    [y1_weights(1),...
+                     y2_weights(1),...
+                     y3_weights(1)],...
                     "ECR", ecr_weight_obj.getValue);
                 
                 
@@ -342,7 +377,14 @@ classdef controller_mpc < handle
                 % Try generating an mpc state object (to look for errors)
                 mpc_obj.Model.Plant = minreal(mpc_obj.Model.Plant);
                 review(mpc_obj)
-                obj.mpc1_initial_state = mpcstate(mpc_obj);
+                
+                try
+                    obj.mpc1_initial_state = mpcstate(mpc_obj);
+                catch er
+                    disp(er.message)
+                    obj.mpc1_initial_state = [];
+                end
+
                 obj.mpc1 = mpc_obj;
 
             elseif strcmp(options.type, 'nonlinear')
