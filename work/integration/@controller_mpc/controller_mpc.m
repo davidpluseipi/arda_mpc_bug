@@ -42,45 +42,42 @@ classdef controller_mpc < handle
                 if options.use_data == true
 
                     obj.use_data = true;
-                    small_step_size = Ts;
+                    
 
-                    plant_model = "plant"; % Simulink plant model 
-                    open_system(plant_model) % Loads and opens
+                    plant_model = "plant"; % Simulink plant model
+                    load_system(plant_model) % Loads and opens
                     set_param(plant_model, "SolverType", "Fixed-step");
-                    set_param(plant_model, "FixedStep", num2str(small_step_size))
+                    set_param(plant_model, "FixedStep", num2str(Ts))
                     save_system(plant_model)
 
                     top_model = "simple_arda"; % top level Simulink model
-                    open_system(top_model)
+                    load_system(top_model)
                     set_param(top_model, "SolverType","Fixed-step")
-                    set_param(top_model, "FixedStep", num2str(small_step_size))
+                    set_param(top_model, "FixedStep", num2str(Ts))
                     save_system(top_model)
 
 
-                    % Set the Simscape local solver sample time within the 
+                    % Set the Simscape local solver sample time within the
                     % plant model successfully simulate
                     set_param(strcat(plant_model, "/Solver Configuration"),...
-                        'LocalSolverSampleTime', num2str(small_step_size))
+                        'LocalSolverSampleTime', num2str(Ts))
                     save_system(plant_model)
 
                     % Run the top level model which contains the plant
                     % model as a model reference
                     simout = sim("simple_arda", "TimeOut", 600);
-                    
+
                     % Set it now to the sample time that will be used in
                     % the mpc
-                    set_param(strcat(plant_model, "/Solver Configuration"),'LocalSolverSampleTime','1')
+                    set_param(strcat(plant_model, "/Solver Configuration"),...
+                        'LocalSolverSampleTime','1')
                     % set_param(plant_model, 'SolverType', 'Variable-step');
                     save_system(plant_model)
 
-
-
                     [plant, initial_state] = system_id(simout.logsout);
 
-
-
                 else
-                    
+
                     %% Linearize directly from the Simulink model
 
                     % Obtain linear plant model at initial operating point
@@ -113,8 +110,8 @@ classdef controller_mpc < handle
                     plant = linearize(model, point);
 
                 end
-                
-                % Look at the plant's D matrix (should be all zeros if 
+
+                % Look at the plant's D matrix (should be all zeros if
                 % no feedthrough)
                 fprintf("Plant D matrix: \n")
                 disp(plant.D)
@@ -136,8 +133,8 @@ classdef controller_mpc < handle
                     c2d_options = c2dOptions("Method","tustin");
                     fprintf("Previous sample time: %1.1f\n", plant.Ts)
 
-                    if isct(plant)                        
-                        
+                    if isct(plant)
+
                         plant = c2d(plant, Ts, c2d_options);
                         fprintf("Plant was continuous, but is now discrete.\n")
 
@@ -147,7 +144,7 @@ classdef controller_mpc < handle
                         fprintf("Plant was resampled with d2d().\n")
 
                     end
-                    
+
                     fprintf("Sample time now: %f\n", plant.Ts)
                     n = numel(find( real(eig(plant.A)) > 1));
                     fprintf('Closed-loop stability (stable=0): %d\n', n)
@@ -161,198 +158,145 @@ classdef controller_mpc < handle
                 plant.InputGroup.ManipulatedVariables = 2;
                 plant.OutputGroup.Measured = 2;
 
-                plant.InputName = {'u1' 'u2'};
-                plant.OutputName = {'y1' 'y2'};
+
 
                 % Define signal types
                 plant = setmpcsignals(plant);
 
-                % Prepare to create MPC object
-                
                 sample_time = ts_obj.getValue; % round(desired_rise_time/10);
                 % Typical starting guess allows 10-20 samples to cover the desired rise time
 
+                %% create MPC controller object with sample time
+                mpc_obj = mpc(plant, sample_time);
+                
                 % Prediction horizon
                 ph_obj = getEntry(section_obj, "prediction_horizon");
-                prediction_horizon = ph_obj.getValue; %round(desired_rise_time - k); % sec
+                mpc_obj.PredictionHorizon = ph_obj.getValue; % sec
                 % Typically long enough to capture transient reponse and significant dynamic
-
+                
                 % Control horizon
                 ch_obj = getEntry(section_obj, "control_horizon");
-                control_horizon = ch_obj.getValue; %round(0.2 * prediction_horizon); % sec
+                mpc_obj.ControlHorizon = ch_obj.getValue; % sec
                 % Typically 10-20% of % prediction horizon
-
-                % Define variables
-                % Plant inputs (manipulated variables)
-                mv1 = struct("Name", "u1", "Units", "V");
-                mv2 = struct("Name", "u2", "Units", "kg/s");
-  
-                % Plant outputs (output variables)
-                ov1 = struct("Name", "T_g", "Units", "K");
-                ov2 = struct("Name", "phi_g", "Units", " ");
- 
-
-                % Constraints and constraint softness (phyical limits of the system)
-                % Softness. 0 = hard, 1 = average, 20 = large violation allowed
-
-                % Constraint and softness for heater voltage
-                mv1.Min = 0;
-                mv1.Max = 460;
-                mv1.MinECR = 0.001;
-                mv1.MaxECR = 0.001;
-                mv1.ScaleFactor = (mv1.Max - mv1.Min) * 1e-3;
-                mv1.RateMin = -0.001;
-                mv1.RateMax = 0.001;
-                mv1.RateMinECR = 0.1;
-                mv1.RateMaxECR = 0.1;
-
-                % Constraint and softness for steam injection
-                mv2.Min = 0;
-                mv2.Max = 0.02;
-                mv2.MinECR = 0.001;
-                mv2.MaxECR = 0.01;
-                mv2.ScaleFactor = (mv2.Max - mv2.Min) * 1e1;
-                mv2.RateMin = -1e-12;
-                mv2.RateMax = 1e-12;
-                mv2.RateMinECR = 0.1;
-                mv2.RateMaxECR = 0.1;
-
-                % Constraint and softness for volumetric airflow (blower)
-                mv3.Min = 0;
-                mv3.Max = 460;
-                mv3.MinECR = 0.001;
-                mv3.MaxECR = 0.001;
-                mv3.ScaleFactor = (mv3.Max - mv3.Min) * 1e-3;
-                mv3.RateMin = -1;
-                mv3.RateMax = 1;
-                mv3.RateMinECR = 0.001;
-                mv3.RateMaxECR = 0.001;
-
-                % Constraint and softness for gas mixture temperature
-                ov1.Min = 20 + 273.15;
-                ov1.Max = 180 + 273.15;
-                ov1.MinECR = 0.001;
-                ov1.MaxECR = 0.001;
-                ov1.ScaleFactor = (ov1.Max - ov1.Min)*1e-2;
-
-                % Constraint and softness for gas mixture relative humidity
-                ov2.Min = 0;
-                ov2.Max = 1;
-                ov2.MinECR = 0.001;
-                ov2.MaxECR = 0.001;
-                ov2.ScaleFactor = 1;
-
-
-                % Weights
-                % 0 = no penalty for violating constraints. (weight > 1) = penalty
                 
-                % Pull the weights from the last time they were optimized
+                % specify nominal values for inputs and outputs
+                mpc_obj.Model.Nominal.U = [0;0];
+                mpc_obj.Model.Nominal.Y = [293.15;0.5];
                 
+                c = cell(2,1);
+                c{1} = 'u1';
+                c{2} = 'u2';
+                mpc_obj.Model.Plant.InputName = c;
+                c{1} = 'y1';
+                c{2} = 'y2';
+                mpc_obj.Model.Plant.y = c;
+                
+                %% specify constraints for MV and MV Rate
+                mpc_obj.MV(1).Min = 0;
+                mpc_obj.MV(1).Max = 460;
+                mpc_obj.MV(1).RateMin = -0.001;
+                mpc_obj.MV(1).RateMax = 0.001;
 
+                mpc_obj.MV(2).Min = 0;
+                mpc_obj.MV(2).Max = 0.02;
+                mpc_obj.MV(2).RateMin = -1e-12;
+                mpc_obj.MV(2).RateMax = 1e-12;
+
+                % specify constraints for OV
+                mpc_obj.OV(1).Min = 293.15;
+                mpc_obj.OV(1).Max = 453.15;
+
+                mpc_obj.OV(2).Min = 0;
+                mpc_obj.OV(2).Max = 1;
                 
+                % specify scale factors for inputs and outputs
+                mpc_obj.MV(1).ScaleFactor = (mpc_obj.MV(1).Max - mpc_obj.MV(1).Min) * 1e-3;
+                mpc_obj.MV(2).ScaleFactor = (mpc_obj.MV(2).Max - mpc_obj.MV(2).Min) * 1e1;
+
+                mpc_obj.OV(1).ScaleFactor = (mpc_obj.OV(1).Max - mpc_obj.OV(1).Min) * 1e-2;
+                mpc_obj.OV(2).ScaleFactor = mpc_obj.OV(2).Max - mpc_obj.OV(2).Min;
+
+                % specify constraint softening for MV and MV Rate
+                mpc_obj.MV(1).MinECR = 0.001;
+                mpc_obj.MV(1).MaxECR = 0.001;
+                mpc_obj.MV(1).RateMinECR = 0.1;
+                mpc_obj.MV(1).RateMaxECR = 0.1;
+
+                mpc_obj.MV(2).MinECR = 0;
+                mpc_obj.MV(2).MaxECR = 0.01;
+                mpc_obj.MV(2).RateMinECR = 0.1;
+                mpc_obj.MV(2).RateMaxECR = 0.1;
                 
+                % specify constraint softening for OV
+                mpc_obj.OV(1).MinECR = 0.001;
+                mpc_obj.OV(1).MaxECR = 0.001;
+
+                mpc_obj.OV(2).MinECR = 0.001;
+                mpc_obj.OV(2).MaxECR = 0.001;
+
+                % specify weights
                 % Manipulated variable weights
                 u1_weight_obj = getEntry(section_obj, "u1_wt");
                 u2_weight_obj = getEntry(section_obj, "u2_wt");
-                u3_weight_obj = getEntry(section_obj, "u3_wt");
-
-                u1_weights = ones(prediction_horizon,1);
-                u2_weights = ones(prediction_horizon,1);
-                u3_weights = ones(prediction_horizon,1);
-
-                for i = 1:prediction_horizon
-
-                    u1_weights(i) = u1_weight_obj.getValue / i;
-                    u2_weights(i) = u2_weight_obj.getValue / i;
-                    u3_weights(i) = u3_weight_obj.getValue / i;
-
-                end
+                u1_weight = u1_weight_obj.getValue;
+                u2_weight = u2_weight_obj.getValue;
+                
+                mpc_obj.Weights.MV = [u1_weight u2_weight];
 
                 % Manipulated variable rate weights
                 u1p_weight_obj = getEntry(section_obj, "u1p_wt"); % p for prime, derivative, aka rate
                 u2p_weight_obj = getEntry(section_obj, "u2p_wt");
-                u3p_weight_obj = getEntry(section_obj, "u3p_wt");
+                u1p_weight = u1p_weight_obj.getValue;
+                u2p_weight = u2p_weight_obj.getValue;  
 
-                u1p_weights = ones(prediction_horizon,1);
-                u2p_weights = ones(prediction_horizon,1);
-                u3p_weights = ones(prediction_horizon,1);
-
-                for i = 1:prediction_horizon
-
-                    u1p_weights(i) = u1p_weight_obj.getValue / i;
-                    u2p_weights(i) = u2p_weight_obj.getValue / i;
-                    u3p_weights(i) = u3p_weight_obj.getValue / i;
-
-                end
+                mpc_obj.Weights.MVRate = [u1p_weight u2p_weight];
                 
                 % Output variable weights
                 y1_weight_obj = getEntry(section_obj, "y1_wt");
                 y2_weight_obj = getEntry(section_obj, "y2_wt");
-                y3_weight_obj = getEntry(section_obj, "y3_wt");
+                y1_weight = y1_weight_obj.getValue;
+                y2_weight = y2_weight_obj.getValue;
+               
+                mpc_obj.Weights.OV = [y1_weight y2_weight];
 
-                y1_weights = ones(prediction_horizon,1);
-                y2_weights = ones(prediction_horizon,1);
-                y3_weights = ones(prediction_horizon,1);
-
-                for i = 1:prediction_horizon
-
-                    y1_weights(i) = y1_weight_obj.getValue / i;
-                    y2_weights(i) = y2_weight_obj.getValue / i;
-                    y3_weights(i) = y3_weight_obj.getValue / i;
-
-                end              
 
                 % Slack variable tuning weight (ECR = equal concern for
                 % relaxation... used to make all soft constraints harder (increase) or
                 % softer (decrease))
                 ecr_weight_obj = getEntry(section_obj, "ecr_wt");
+
+                mpc_obj.Weights.ECR = ecr_weight_obj.getValue;
                 
-                weights = struct("MV", ...
-                    [u1_weights(1),...
-                     u2_weights(1)],...
-                    "MVRate",...
-                    [u1p_weights(1),...
-                     u2p_weights(1)],...
-                    "OV",...
-                    [y1_weights(1),...
-                     y2_weights(1)],...
-                    "ECR", ecr_weight_obj.getValue);
+
+                % use custom output disturbance model
+                output_disturbance_model = tf({1 0;0 1},{[1 0 0 0],1; 1, [1 0 0 0]});
+                setoutdist(mpc_obj, 'model', output_disturbance_model);
                 
-                
-%                 weights = struct('MV', [2 4.5 8],...
-%                     'MVRate', [5000 3000 500],...
-%                     'OV', [950 42 225],...
-%                     'ECR', 100000);
 
-                % Disturbance / Noise Variable
-                %dv1 = struct("Name", "disturbance", "Units", " ");
+                % specify simulation options
+                options = mpcsimopt();
+                options.RefLookAhead = 'on';
+                options.MDLookAhead = 'off';
+                options.Constraints = 'on';
+                options.OpenLoop = 'off';
 
-                plant = minreal(plant);
+                % Specify references for simulation
+                N = 101;
+                reference_signal = ones(N,2);
+                reference_signal(1:10, 1) = 293.15;
+                reference_signal(11:end, 1) = 294.15;
+                reference_signal(1:10, 2) = 0.3;
+                reference_signal(11:end, 2) = 0.4;
 
-                % Create the object
-                mpc_obj = mpc(plant, sample_time, prediction_horizon, control_horizon, weights,...
-                    [mv1; mv2], [ov1; ov2]);
+                measured_disturbance_signal = [];
 
-                %mpc1 = mpc(plant);
-                try
-
-                    mpc_obj.Model.Nominal = struct('X', initial_state,...
-                        'U', [0 0 0], 'Y', [293.15 0.1 0]);
-
-                catch er
-
-                    disp(er.message)
-                    order = size(mpc_obj.Model.Plant.A, 1);
-                    initial_state = zeros(order, 1);
-                    mpc_obj.Model.Nominal = struct('X', initial_state,...
-                        'U', [0 0], 'Y', [293.15 0.1]);
-
-                end
-
+                % run simulation
+                sim(mpc_obj, N, reference_signal, measured_disturbance_signal, options);
+                                
                 % Try generating an mpc state object (to look for errors)
                 mpc_obj.Model.Plant = minreal(mpc_obj.Model.Plant);
                 review(mpc_obj)
-                
+
                 try
                     obj.mpc1_initial_state = mpcstate(mpc_obj);
                 catch er

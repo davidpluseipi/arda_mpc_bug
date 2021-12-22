@@ -80,57 +80,59 @@ bob.voltage = zeros(bob.max_iterations,1);
 zoe = responder(bob); %#ok<NASGU>
 
 % Create the app
-if bob.using_app && ~isempty(options.app)
-
-    app = options.app;
-
-else
-
-    app = arda_app();
-    app.RunButton.Enable = "off";
-    app.CreateNewButton.Enable = "off";
-    app.LoadExistingButton.Enable = "off";
-    app.EditCurrentButton.Enable = "off";
-    app.HeaterDropDown.Value = bob.heater;
-    app.max_iterationsEditField_2.Value = bob.max_iterations;
-    app.LivePlotCheckBox.Value = bob.live_plot;
-    app.SimulationonlyCheckBox.Value = bob.simulation_only;
-    app.UsingArduinoHardwareCheckBox.Value = bob.using_arduino_hardware;
-    app.UsingNIHardwareCheckBox.Value = bob.using_ni_hardware;
-    app.ProgressBarCheckBox.Value = bob.progress_bar;
-    app.UsingLIDARCheckBox.Value = bob.using_lidar;
-    app.UsingRHsensorCheckBox.Value = bob.using_relative_humidity_sensor;
-    app.UsingloadcellCheckBox.Value = bob.using_load_cell;
-
-end
-
-plot(app.UIAxes_profile, bob.t(end-1), bob.s, '-r');
-app.UIAxes_profile.XLim = [0 bob.max_iterations];
-
-app.UIAxes_profile.YLim = [20 40];
-hold(app.UIAxes_profile,'on')
-for ii = 1:length(bob.t)
-    plot(app.UIAxes_profile, bob.t(ii) * ones(length(app.UIAxes_profile.YLim),1),...
-        app.UIAxes_profile.YLim);
-end
-
-app.UIAxes_12.XLim = [0 bob.max_iterations];
-app.UIAxes_11.XLim = [0 bob.max_iterations];
-app.UIAxes_10.XLim = [0 bob.max_iterations];
-app.UIAxes_9.XLim = [0 bob.max_iterations];
-app.UIAxes_8.XLim = [0 bob.max_iterations];
-app.UIAxes_7.XLim = [0 bob.max_iterations];
-app.UIAxes_6.XLim = [0 bob.max_iterations];
-app.UIAxes_4.XLim = [0 bob.max_iterations];
-app.UIAxes_15.XLim = [0 bob.max_iterations];
-app.UIAxes_14.XLim = [0 bob.max_iterations];
-app.UIAxes_13.XLim = [0 bob.max_iterations];
-% app.UIAxes_16.XLim = [0 bob.max_iterations];
-% app.UIAxes_17.XLim = [0 bob.max_iterations];
-% app.UIAxes_18.XLim = [0 bob.max_iterations];
-% app.UIAxes_19.XLim = [0 bob.max_iterations];
-
 if bob.live_plot
+
+    if bob.using_app && ~isempty(options.app)
+
+        app = options.app;
+
+    else
+
+        app = arda_app();
+        app.RunButton.Enable = "off";
+        app.CreateNewButton.Enable = "off";
+        app.LoadExistingButton.Enable = "off";
+        app.EditCurrentButton.Enable = "off";
+        app.HeaterDropDown.Value = bob.heater;
+        app.max_iterationsEditField_2.Value = bob.max_iterations;
+        app.LivePlotCheckBox.Value = bob.live_plot;
+        app.SimulationonlyCheckBox.Value = bob.simulation_only;
+        app.UsingArduinoHardwareCheckBox.Value = bob.using_arduino_hardware;
+        app.UsingNIHardwareCheckBox.Value = bob.using_ni_hardware;
+        app.ProgressBarCheckBox.Value = bob.progress_bar;
+        app.UsingLIDARCheckBox.Value = bob.using_lidar;
+        app.UsingRHsensorCheckBox.Value = bob.using_relative_humidity_sensor;
+        app.UsingloadcellCheckBox.Value = bob.using_load_cell;
+
+    end
+
+    plot(app.UIAxes_profile, bob.t(end-1), bob.s, '-r');
+    app.UIAxes_profile.XLim = [0 bob.max_iterations];
+
+    app.UIAxes_profile.YLim = [20 40];
+    hold(app.UIAxes_profile,'on')
+    for ii = 1:length(bob.t)
+        plot(app.UIAxes_profile, bob.t(ii) * ones(length(app.UIAxes_profile.YLim),1),...
+            app.UIAxes_profile.YLim);
+    end
+
+    app.UIAxes_12.XLim = [0 bob.max_iterations];
+    app.UIAxes_11.XLim = [0 bob.max_iterations];
+    app.UIAxes_10.XLim = [0 bob.max_iterations];
+    app.UIAxes_9.XLim = [0 bob.max_iterations];
+    app.UIAxes_8.XLim = [0 bob.max_iterations];
+    app.UIAxes_7.XLim = [0 bob.max_iterations];
+    app.UIAxes_6.XLim = [0 bob.max_iterations];
+    app.UIAxes_4.XLim = [0 bob.max_iterations];
+    app.UIAxes_15.XLim = [0 bob.max_iterations];
+    app.UIAxes_14.XLim = [0 bob.max_iterations];
+    app.UIAxes_13.XLim = [0 bob.max_iterations];
+    % app.UIAxes_16.XLim = [0 bob.max_iterations];
+    % app.UIAxes_17.XLim = [0 bob.max_iterations];
+    % app.UIAxes_18.XLim = [0 bob.max_iterations];
+    % app.UIAxes_19.XLim = [0 bob.max_iterations];
+
+
     app.max_iterationsEditField.Value = bob.max_iterations;
 end
 
@@ -181,18 +183,22 @@ bob.set_initial_conditions();
 % Create nonlinear mpc
 bob.controller = controller_mpc(bob.x_0, "type", "linear");
 save bob.mat bob
-small_step_size = 0.1;
+
 test_model = "simple_arda_mpc";
-open_system(test_model)
+load_system(test_model)
 set_param(test_model, "SolverType","Variable-step")
 set_param("plant", "SolverType", "Variable-step")
 %simout = sim(test_model,"TimeOut", 600);
 
 tuning_model = "simple_arda_mpc_tune_me";
-open_system(tuning_model)
+load_system(tuning_model)
 set_param(tuning_model, "SolverType","Variable-step")
 
-simout = sim(tuning_model,"TimeOut", 4.9);
+%simout = sim(tuning_model,"TimeOut", 4.9);
+
+open_system("arda_hybrid")
+
+
 
 return
 % % Create and define the temperature controller
@@ -290,8 +296,8 @@ end
         %             ax = gca;
         %         end
 
-        
-        
+
+
 
         %% Establish setpoints
         % bob.temperature_setpoint = bob.T_g;
@@ -364,21 +370,21 @@ end
             end
 
             %% Controller
-%             if round(bob.T_g) <= length(bob.controllers)
-%                 C = bob.controllers{round(bob.T_g)};
-%             else
-%                 C = bob.controllers{end};
-%             end
-%             bob.pid.K_p = C.Kp;
-%             bob.pid.K_i = C.Ki;
-%             bob.pid.K_d = C.Kd;
+            %             if round(bob.T_g) <= length(bob.controllers)
+            %                 C = bob.controllers{round(bob.T_g)};
+            %             else
+            %                 C = bob.controllers{end};
+            %             end
+            %             bob.pid.K_p = C.Kp;
+            %             bob.pid.K_i = C.Ki;
+            %             bob.pid.K_d = C.Kd;
 
             % Calculate output for temperature controller
-%             bob.pid.calculate_controller_output(bob.setpoints(i), bob.T_g);
-%             if i < 10
-%                 bob.pid.out = 0;
-%             end
-%             bob.P_h(i) = bob.pid.out;
+            %             bob.pid.calculate_controller_output(bob.setpoints(i), bob.T_g);
+            %             if i < 10
+            %                 bob.pid.out = 0;
+            %             end
+            %             bob.P_h(i) = bob.pid.out;
 
             %% MPC
             % Set references
@@ -414,9 +420,9 @@ end
             bob.V_h(i) = mv(1);
 
             % mv(2) = mv(2)/bob.controller.nlmpc1.Ts; % Adjust steam from kg/s to kg/Ts
-            
-            
-            
+
+
+
 
             %% Actuator
             % When using the Arduino, the heater can only be on or off
@@ -465,43 +471,43 @@ end
 
             %% Controller
             % Calculate output for humidity controller
-%             bob.pid_phi.calculate_controller_output(...
-%                 bob.relative_humidity_setpoint, bob.phi);
-%             bob.m_steam(i) = bob.pid_phi.out;
+            %             bob.pid_phi.calculate_controller_output(...
+            %                 bob.relative_humidity_setpoint, bob.phi);
+            %             bob.m_steam(i) = bob.pid_phi.out;
 
             %% Actuator: steam
-%             if ~bob.simulation_only && bob.using_arduino_hardware
-% 
-%                 if bob.pid_phi.out > 0
-% 
-%                     writeDigitalPin(bob.arduino_daq_obj, "D6",1); % light
-%                     pause(bob.pid_phi.out)
-%                     writeDigitalPin(bob.arduino_daq_obj, "D6",0); % light
-% 
-%                 end
-% 
-%             end
+            %             if ~bob.simulation_only && bob.using_arduino_hardware
+            %
+            %                 if bob.pid_phi.out > 0
+            %
+            %                     writeDigitalPin(bob.arduino_daq_obj, "D6",1); % light
+            %                     pause(bob.pid_phi.out)
+            %                     writeDigitalPin(bob.arduino_daq_obj, "D6",0); % light
+            %
+            %                 end
+            %
+            %             end
             %% Plant Model
             % On the first time through the loop, use the x_0 above,
             % otherwise, use the output of the ode.
-%             if i >= 2
-% 
-%                 % bob.x_0 = y(end,:);
-%                 x = y(end,:);
-% 
-%             end
-            
+            %             if i >= 2
+            %
+            %                 % bob.x_0 = y(end,:);
+            %                 x = y(end,:);
+            %
+            %             end
+
             % Call ode solver
             % [~,y] = ode23(@(t,y)odefun(t,y,bob),[0 bob.step_size],bob.x_0);
-%             x = state_function(x, mv) + x;
-%             o(:,i) = output_function(x, mv);
-            
+            %             x = state_function(x, mv) + x;
+            %             o(:,i) = output_function(x, mv);
+
             y(:,i) = bob.controller.mpc1.Model.Plant.C * x + ...
                 bob.controller.mpc1.Model.Plant.D * mv;
 
             x = bob.controller.mpc1.Model.Plant.A * x + ...
                 bob.controller.mpc1.Model.Plant.B * mv;
-            
+
 
             %% Acquire data from hardware sensors
             % If using hardware sensors, overwrite the simulated values
@@ -591,7 +597,7 @@ end
             if ~strcmp(bob.heater,"ni")
                 bob.time(i) = datetime('now');
             end
-%             bob.outputs(i,1:12) = y(end,:);
+            %             bob.outputs(i,1:12) = y(end,:);
             bob.outputs(i,1:12) = x';
             bob.T_g = bob.outputs(i,1); %disp(bob.T_g)
             bob.T_h = bob.outputs(i,2); %disp(bob.T_h)

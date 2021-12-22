@@ -36,14 +36,3 @@ U = struct('Weight', uw);
 setterminal(mpc_obj,Y,U);
 setoutdist(mpc_obj,'model',ss(zeros(14,1)))
 setEstimator(mpc_obj,[],eye(2))
-
-simopt = mpcsimopt(mpc_obj);
-simopt.PlantInitialState = [293.15; 0.3;0;0;0;0;0;0;0;0;0;0;0;0];
-N = 101;
-r = ones(N,2);
-r(1:10, 1) = 293.15;
-r(11:end, 1) = 294.15;
-r(1:10, 2) = 0.3;
-r(11:end, 2) = 0.4;
-Tstop = 6;
-[y,t,u] = sim(mpc_obj, ceil(Tstop/Ts), r, simopt)
