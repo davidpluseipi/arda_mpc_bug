@@ -197,7 +197,14 @@ set_param(tuning_model, "SolverType","Variable-step")
 %simout = sim(tuning_model,"TimeOut", 4.9);
 
 open_system("arda_hybrid")
-
+n = 0;
+sim("arda_hybrid")
+n = n + 1;
+disp(n)
+bob.controller.mpc1 = impose_terminal_penalty(bob);
+sim("arda_hybrid")
+n = n + 1;
+disp(n)
 
 
 return
